@@ -8,6 +8,7 @@ from commands import ping
 from commands import serverinfo
 from commands import serverstats
 from commands import channels
+from commands import organize
 from ai import assistant
 
 
@@ -51,6 +52,8 @@ async def load_features():
     await serverstats.setup(bot)
 
     await channels.setup(bot)
+
+    await organize.setup(bot)
 
     await assistant.setup(bot)
 
