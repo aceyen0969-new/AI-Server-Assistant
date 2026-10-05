@@ -1,3 +1,4 @@
+
 import os
 import asyncio
 
@@ -104,7 +105,7 @@ async def ping(interaction: discord.Interaction):
 
 @bot.tree.command(
     name="serverinfo",
-    description="Show information about this Discord server."
+    description="Show basic information about this Discord server."
 )
 async def serverinfo(interaction: discord.Interaction):
 
@@ -160,6 +161,173 @@ async def serverinfo(interaction: discord.Interaction):
 
 
 # =========================================================
+# /SERVERSTATS
+# =========================================================
+
+@bot.tree.command(
+    name="serverstats",
+    description="Show detailed statistics about this server."
+)
+async def serverstats(interaction: discord.Interaction):
+
+    guild = interaction.guild
+
+    if guild is None:
+
+        await interaction.response.send_message(
+            "This command can only be used inside a server."
+        )
+
+        return
+
+
+    # -----------------------------------------------------
+    # COUNT CHANNEL TYPES
+    # -----------------------------------------------------
+
+    text_channels = len(guild.text_channels)
+
+    voice_channels = len(guild.voice_channels)
+
+    categories = len(guild.categories)
+
+    total_channels = len(guild.channels)
+
+
+    # -----------------------------------------------------
+    # COUNT MEMBERS
+    # -----------------------------------------------------
+
+    total_members = guild.member_count or 0
+
+    bot_count = sum(
+        1
+        for member in guild.members
+        if member.bot
+    )
+
+    human_count = total_members - bot_count
+
+
+    # -----------------------------------------------------
+    # COUNT ONLINE MEMBERS
+    # -----------------------------------------------------
+
+    online_members = sum(
+        1
+        for member in guild.members
+        if member.status != discord.Status.offline
+    )
+
+
+    # -----------------------------------------------------
+    # COUNT ROLES
+    # -----------------------------------------------------
+
+    role_count = len(guild.roles) - 1
+
+    if role_count < 0:
+        role_count = 0
+
+
+    # -----------------------------------------------------
+    # CREATE EMBED
+    # -----------------------------------------------------
+
+    embed = discord.Embed(
+        title=f"📊 {guild.name} Server Statistics",
+        description="Detailed overview of your Discord server.",
+        color=discord.Color.blurple()
+    )
+
+
+    # -----------------------------------------------------
+    # MEMBERS
+    # -----------------------------------------------------
+
+    embed.add_field(
+        name="👥 Members",
+        value=(
+            f"Total: **{total_members:,}**\n"
+            f"Humans: **{human_count:,}**\n"
+            f"Bots: **{bot_count:,}**\n"
+            f"Online: **{online_members:,}**"
+        ),
+        inline=True
+    )
+
+
+    # -----------------------------------------------------
+    # CHANNELS
+    # -----------------------------------------------------
+
+    embed.add_field(
+        name="💬 Channels",
+        value=(
+            f"Total: **{total_channels:,}**\n"
+            f"Text: **{text_channels:,}**\n"
+            f"Voice: **{voice_channels:,}**\n"
+            f"Categories: **{categories:,}**"
+        ),
+        inline=True
+    )
+
+
+    # -----------------------------------------------------
+    # SERVER STRUCTURE
+    # -----------------------------------------------------
+
+    embed.add_field(
+        name="🏗️ Structure",
+        value=(
+            f"Roles: **{role_count:,}**\n"
+            f"Server ID: `{guild.id}`"
+        ),
+        inline=True
+    )
+
+
+    # -----------------------------------------------------
+    # SERVER OWNER
+    # -----------------------------------------------------
+
+    owner = guild.owner
+
+    if owner:
+
+        embed.add_field(
+            name="👑 Owner",
+            value=owner.mention,
+            inline=False
+        )
+
+
+    # -----------------------------------------------------
+    # SERVER ICON
+    # -----------------------------------------------------
+
+    if guild.icon:
+
+        embed.set_thumbnail(
+            url=guild.icon.url
+        )
+
+
+    # -----------------------------------------------------
+    # FOOTER
+    # -----------------------------------------------------
+
+    embed.set_footer(
+        text="AI Server Assistant • Server Analytics"
+    )
+
+
+    await interaction.response.send_message(
+        embed=embed
+    )
+
+
+# =========================================================
 # SEND LONG DISCORD MESSAGES
 # =========================================================
 
@@ -168,27 +336,20 @@ async def send_long_message(
     text: str
 ):
 
-    # Keep below Discord's 2000-character limit
     MAX_LENGTH = 1900
 
     while len(text) > MAX_LENGTH:
 
         chunk = text[:MAX_LENGTH]
 
-        # Try to split at a paragraph
         split_position = chunk.rfind("\n\n")
 
-        # If there isn't a good paragraph break,
-        # try a normal line break
         if split_position < 500:
             split_position = chunk.rfind("\n")
 
-        # If there isn't a good line break,
-        # try to split at a space
         if split_position < 500:
             split_position = chunk.rfind(" ")
 
-        # Last resort
         if split_position < 1:
             split_position = MAX_LENGTH
 
@@ -198,7 +359,7 @@ async def send_long_message(
 
         text = text[split_position:].strip()
 
-    # Send the final part
+
     if text:
 
         await channel.send(text)
@@ -227,14 +388,12 @@ async def on_message(message: discord.Message):
         return
 
 
-    # Get user's question
     question = message.content.strip()
 
     if not question:
         return
 
 
-    # Make sure this is a server
     guild = message.guild
 
     if guild is None:
@@ -285,6 +444,9 @@ Server name: {guild.name}
 Member count: {guild.member_count}
 Channel count: {len(guild.channels)}
 Role count: {len(guild.roles)}
+Text channels: {len(guild.text_channels)}
+Voice channels: {len(guild.voice_channels)}
+Categories: {len(guild.categories)}
 
 USER INFORMATION
 ----------------
@@ -347,10 +509,6 @@ unless the bot actually performed that action.
                     answer = "I couldn't generate a response."
 
 
-                # -------------------------------------------------
-                # SEND LONG RESPONSES IN MULTIPLE MESSAGES
-                # -------------------------------------------------
-
                 await send_long_message(
                     message.channel,
                     answer
@@ -412,10 +570,6 @@ unless the bot actually performed that action.
 
                         continue
 
-
-                # =================================================
-                # OTHER ERROR
-                # =================================================
 
                 break
 
