@@ -1,4 +1,5 @@
 import os
+import asyncio
 
 import discord
 from dotenv import load_dotenv
@@ -31,6 +32,118 @@ GEMINI_MODEL = "gemini-3.8-flash"
 
 
 # =========================================================
+# CONFIRMATION VIEW
+# =========================================================
+
+class OrganizationView(discord.ui.View):
+
+    def __init__(self, author_id: int):
+
+        super().__init__(timeout=120)
+
+        self.author_id = author_id
+
+
+    # =====================================================
+    # CHECK USER
+    # =====================================================
+
+    async def interaction_check(
+        self,
+        interaction: discord.Interaction
+    ):
+
+        if interaction.user.id != self.author_id:
+
+            await interaction.response.send_message(
+                "❌ Only the person who created this "
+                "proposal can use these buttons.",
+                ephemeral=True
+            )
+
+            return False
+
+        return True
+
+
+    # =====================================================
+    # CONFIRM
+    # =====================================================
+
+    @discord.ui.button(
+        label="Confirm",
+        emoji="✅",
+        style=discord.ButtonStyle.success
+    )
+    async def confirm(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        # Disable both buttons
+
+        for item in self.children:
+
+            item.disabled = True
+
+
+        await interaction.response.edit_message(
+            view=self
+        )
+
+
+        await interaction.followup.send(
+            "✅ **Proposal confirmed.**\n\n"
+            "No channels have been changed yet.\n\n"
+            "The next update will allow the bot to "
+            "actually apply approved organization changes."
+        )
+
+
+    # =====================================================
+    # CANCEL
+    # =====================================================
+
+    @discord.ui.button(
+        label="Cancel",
+        emoji="❌",
+        style=discord.ButtonStyle.danger
+    )
+    async def cancel(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        for item in self.children:
+
+            item.disabled = True
+
+
+        await interaction.response.edit_message(
+            view=self
+        )
+
+
+        await interaction.followup.send(
+            "❌ **Organization proposal cancelled.**\n\n"
+            "No changes were made to the server."
+        )
+
+
+    # =====================================================
+    # TIMEOUT
+    # =====================================================
+
+    async def on_timeout(self):
+
+        for item in self.children:
+
+            item.disabled = True
+
+
+# =========================================================
 # SETUP
 # =========================================================
 
@@ -38,19 +151,25 @@ async def setup(bot):
 
     @bot.tree.command(
         name="organize",
-        description="Ask AI for a cleaner channel organization."
+        description=(
+            "Ask AI for a cleaner channel organization."
+        )
     )
-    async def organize(interaction: discord.Interaction):
+    async def organize(
+        interaction: discord.Interaction
+    ):
 
         guild = interaction.guild
 
         if guild is None:
 
             await interaction.response.send_message(
-                "This command can only be used inside a server."
+                "This command can only be used inside "
+                "a server."
             )
 
             return
+
 
         # =================================================
         # BUILD CHANNEL STRUCTURE
@@ -58,9 +177,11 @@ async def setup(bot):
 
         structure = []
 
+
         for category in guild.categories:
 
             channels = []
+
 
             for channel in category.channels:
 
@@ -73,6 +194,7 @@ async def setup(bot):
                         f"#{channel.name}"
                     )
 
+
                 elif isinstance(
                     channel,
                     discord.VoiceChannel
@@ -82,24 +204,37 @@ async def setup(bot):
                         f"🔊 {channel.name}"
                     )
 
-            structure.append(
-                f"📁 {category.name}\n"
-                + "\n".join(
-                    f"  {channel}"
-                    for channel in channels
+
+            if channels:
+
+                structure.append(
+                    f"📁 {category.name}\n"
+                    + "\n".join(
+                        f"  {channel}"
+                        for channel in channels
+                    )
                 )
-            )
+
+            else:
+
+                structure.append(
+                    f"📁 {category.name}\n"
+                    "  No channels"
+                )
+
 
         # =================================================
-        # UNCATEGORIZED
+        # UNCATEGORIZED CHANNELS
         # =================================================
 
         uncategorized = []
+
 
         for channel in guild.channels:
 
             if channel.category is not None:
                 continue
+
 
             if isinstance(
                 channel,
@@ -110,6 +245,7 @@ async def setup(bot):
                     f"#{channel.name}"
                 )
 
+
             elif isinstance(
                 channel,
                 discord.VoiceChannel
@@ -118,6 +254,7 @@ async def setup(bot):
                 uncategorized.append(
                     f"🔊 {channel.name}"
                 )
+
 
         if uncategorized:
 
@@ -129,9 +266,11 @@ async def setup(bot):
                 )
             )
 
+
         channel_structure = "\n\n".join(
             structure
         )
+
 
         # =================================================
         # AI PROMPT
@@ -153,17 +292,18 @@ Your job is to suggest a cleaner organization.
 IMPORTANT RULES:
 
 1. Do NOT claim that you changed anything.
-2. Do NOT invent channels that don't exist.
-3. Do NOT invent categories unless you clearly label them
-   as proposed categories.
+2. Do NOT invent existing channels.
+3. Do NOT pretend proposed categories already exist.
 4. Use the actual channel names when making suggestions.
-5. Don't suggest unnecessary changes if the server is
+5. Do not suggest unnecessary changes if the server is
    already organized well.
 6. Consider what each channel appears to be used for based
    on its name.
 7. Keep the proposal practical for a real Discord server.
+8. Clearly distinguish proposed organization from the
+   current organization.
 
-FORMAT YOUR RESPONSE LIKE THIS:
+FORMAT:
 
 🧠 AI Organization Proposal
 
@@ -176,19 +316,22 @@ FORMAT YOUR RESPONSE LIKE THIS:
 🔊 voice-channel
 
 💡 Why?
-Brief explanation of why this organization would be
-better.
+Brief explanation.
 
 ⚠️ No changes have been made yet.
 """
 
 
         # =================================================
-        # ASK GEMINI
+        # DISCORD LOADING STATE
         # =================================================
 
         await interaction.response.defer()
 
+
+        # =================================================
+        # ASK GEMINI
+        # =================================================
 
         for attempt in range(3):
 
@@ -199,14 +342,21 @@ better.
                     contents=prompt
                 )
 
+
                 answer = response.text
+
 
                 if not answer:
 
                     answer = (
-                        "I couldn't generate an organization "
-                        "proposal."
+                        "I couldn't generate an "
+                        "organization proposal."
                     )
+
+
+                # =========================================
+                # EMBED
+                # =========================================
 
                 embed = discord.Embed(
                     title="🧠 AI Organization Proposal",
@@ -214,23 +364,61 @@ better.
                     color=discord.Color.blurple()
                 )
 
+
                 embed.set_footer(
                     text=(
                         "AI Server Assistant • "
-                        "Suggestion only • No changes made"
+                        "Review before confirming"
                     )
                 )
 
+
+                # =========================================
+                # BUTTONS
+                # =========================================
+
+                view = OrganizationView(
+                    author_id=interaction.user.id
+                )
+
+
                 await interaction.followup.send(
-                    embed=embed
+                    embed=embed,
+                    view=view
+                )
+
+
+                print(
+                    "----------------------------------------"
+                )
+
+                print(
+                    "✅ ORGANIZE AI REQUEST SUCCESSFUL"
+                )
+
+                print(
+                    f"Attempt: {attempt + 1}"
+                )
+
+                print(
+                    "Confirmation buttons displayed."
+                )
+
+                print(
+                    "----------------------------------------"
                 )
 
                 return
 
 
+            # =============================================
+            # ERROR
+            # =============================================
+
             except Exception as e:
 
                 error_text = str(e)
+
 
                 print(
                     "----------------------------------------"
@@ -245,60 +433,119 @@ better.
                     f"Error: {error_text}"
                 )
 
-                print(
-                    "----------------------------------------"
-                )
 
-
-                # =============================================
-                # DAILY QUOTA
-                # =============================================
+                # =========================================
+                # QUOTA
+                # =========================================
 
                 if (
                     "429" in error_text
                     or
-                    "RESOURCE_EXHAUSTED" in error_text
+                    "RESOURCE_EXHAUSTED"
+                    in error_text
                 ):
 
+                    print()
+                    print(
+                        "⚠️ GEMINI QUOTA EXCEEDED"
+                    )
+
+                    print(
+                        "The Gemini API free-tier quota "
+                        "has been reached."
+                    )
+
+                    print(
+                        "Wait for the quota to reset."
+                    )
+
+                    print(
+                        "----------------------------------------"
+                    )
+
+
                     await interaction.followup.send(
-                        "⚠️ Gemini's daily free-tier quota "
-                        "has been reached.\n\n"
+                        "⚠️ **Gemini's daily free-tier "
+                        "quota has been reached.**\n\n"
                         "Try again after the quota resets."
                     )
+
 
                     return
 
 
-                # =============================================
-                # TEMPORARY 503 ERROR
-                # =============================================
+                # =========================================
+                # 503
+                # =========================================
 
                 if (
                     "503" in error_text
                     or
-                    "UNAVAILABLE" in error_text
+                    "UNAVAILABLE"
+                    in error_text
                 ):
 
                     if attempt < 2:
 
-                        import asyncio
+                        print()
+                        print(
+                            "⚠️ GEMINI TEMPORARILY "
+                            "UNAVAILABLE"
+                        )
+
+                        print(
+                            "Retrying in 5 seconds..."
+                        )
+
+                        print(
+                            "----------------------------------------"
+                        )
+
 
                         await asyncio.sleep(5)
 
                         continue
 
 
+                    print()
+                    print(
+                        "❌ GEMINI STILL UNAVAILABLE"
+                    )
+
+                    print(
+                        "All retry attempts failed."
+                    )
+
+                    print(
+                        "----------------------------------------"
+                    )
+
+                    break
+
+
+                # =========================================
+                # OTHER ERROR
+                # =========================================
+
+                print()
+                print(
+                    "❌ UNKNOWN GEMINI ERROR"
+                )
+
+                print(
+                    "----------------------------------------"
+                )
+
                 break
 
 
-        # =============================================
+        # =================================================
         # ALL ATTEMPTS FAILED
-        # =============================================
+        # =================================================
 
         await interaction.followup.send(
             "❌ Gemini is currently unavailable after "
             "multiple attempts.\n\n"
-            "The bot itself is working. Try `/organize` "
-            "again later."
+            "The Discord bot itself is working. "
+            "Please try `/organize` again later."
         )
-
