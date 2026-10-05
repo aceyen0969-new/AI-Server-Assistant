@@ -1,4 +1,3 @@
-
 import os
 import asyncio
 
@@ -182,7 +181,7 @@ async def serverstats(interaction: discord.Interaction):
 
 
     # -----------------------------------------------------
-    # COUNT CHANNEL TYPES
+    # CHANNEL COUNTS
     # -----------------------------------------------------
 
     text_channels = len(guild.text_channels)
@@ -195,7 +194,7 @@ async def serverstats(interaction: discord.Interaction):
 
 
     # -----------------------------------------------------
-    # COUNT MEMBERS
+    # MEMBER COUNTS
     # -----------------------------------------------------
 
     total_members = guild.member_count or 0
@@ -209,10 +208,6 @@ async def serverstats(interaction: discord.Interaction):
     human_count = total_members - bot_count
 
 
-    # -----------------------------------------------------
-    # COUNT ONLINE MEMBERS
-    # -----------------------------------------------------
-
     online_members = sum(
         1
         for member in guild.members
@@ -221,7 +216,7 @@ async def serverstats(interaction: discord.Interaction):
 
 
     # -----------------------------------------------------
-    # COUNT ROLES
+    # ROLE COUNT
     # -----------------------------------------------------
 
     role_count = len(guild.roles) - 1
@@ -231,7 +226,7 @@ async def serverstats(interaction: discord.Interaction):
 
 
     # -----------------------------------------------------
-    # CREATE EMBED
+    # EMBED
     # -----------------------------------------------------
 
     embed = discord.Embed(
@@ -240,10 +235,6 @@ async def serverstats(interaction: discord.Interaction):
         color=discord.Color.blurple()
     )
 
-
-    # -----------------------------------------------------
-    # MEMBERS
-    # -----------------------------------------------------
 
     embed.add_field(
         name="👥 Members",
@@ -257,10 +248,6 @@ async def serverstats(interaction: discord.Interaction):
     )
 
 
-    # -----------------------------------------------------
-    # CHANNELS
-    # -----------------------------------------------------
-
     embed.add_field(
         name="💬 Channels",
         value=(
@@ -273,10 +260,6 @@ async def serverstats(interaction: discord.Interaction):
     )
 
 
-    # -----------------------------------------------------
-    # SERVER STRUCTURE
-    # -----------------------------------------------------
-
     embed.add_field(
         name="🏗️ Structure",
         value=(
@@ -287,24 +270,14 @@ async def serverstats(interaction: discord.Interaction):
     )
 
 
-    # -----------------------------------------------------
-    # SERVER OWNER
-    # -----------------------------------------------------
-
-    owner = guild.owner
-
-    if owner:
+    if guild.owner:
 
         embed.add_field(
             name="👑 Owner",
-            value=owner.mention,
+            value=guild.owner.mention,
             inline=False
         )
 
-
-    # -----------------------------------------------------
-    # SERVER ICON
-    # -----------------------------------------------------
 
     if guild.icon:
 
@@ -313,12 +286,206 @@ async def serverstats(interaction: discord.Interaction):
         )
 
 
-    # -----------------------------------------------------
-    # FOOTER
-    # -----------------------------------------------------
-
     embed.set_footer(
         text="AI Server Assistant • Server Analytics"
+    )
+
+
+    await interaction.response.send_message(
+        embed=embed
+    )
+
+
+# =========================================================
+# /CHANNELS
+# =========================================================
+
+@bot.tree.command(
+    name="channels",
+    description="Analyze the server's channel organization."
+)
+async def channels(interaction: discord.Interaction):
+
+    guild = interaction.guild
+
+    if guild is None:
+
+        await interaction.response.send_message(
+            "This command can only be used inside a server."
+        )
+
+        return
+
+
+    # -----------------------------------------------------
+    # CREATE CHANNEL STRUCTURE
+    # -----------------------------------------------------
+
+    categories = guild.categories
+
+    uncategorized_text = []
+    uncategorized_voice = []
+
+    category_data = []
+
+
+    # -----------------------------------------------------
+    # CHECK CATEGORIES
+    # -----------------------------------------------------
+
+    for category in categories:
+
+        text_channels = []
+        voice_channels = []
+
+        for channel in category.channels:
+
+            if isinstance(channel, discord.TextChannel):
+
+                text_channels.append(
+                    f"#{channel.name}"
+                )
+
+            elif isinstance(channel, discord.VoiceChannel):
+
+                voice_channels.append(
+                    f"🔊 {channel.name}"
+                )
+
+
+        category_data.append(
+            (
+                category.name,
+                text_channels,
+                voice_channels
+            )
+        )
+
+
+    # -----------------------------------------------------
+    # FIND UNCATEGORIZED CHANNELS
+    # -----------------------------------------------------
+
+    for channel in guild.channels:
+
+        if channel.category is not None:
+            continue
+
+
+        if isinstance(channel, discord.TextChannel):
+
+            uncategorized_text.append(
+                f"#{channel.name}"
+            )
+
+
+        elif isinstance(channel, discord.VoiceChannel):
+
+            uncategorized_voice.append(
+                f"🔊 {channel.name}"
+            )
+
+
+    # -----------------------------------------------------
+    # CREATE EMBED
+    # -----------------------------------------------------
+
+    embed = discord.Embed(
+        title=f"📋 {guild.name} Channel Structure",
+        description="Current organization of your server channels.",
+        color=discord.Color.blurple()
+    )
+
+
+    # -----------------------------------------------------
+    # CATEGORY FIELDS
+    # -----------------------------------------------------
+
+    for category_name, text_channels, voice_channels in category_data:
+
+        channel_list = []
+
+        channel_list.extend(text_channels)
+        channel_list.extend(voice_channels)
+
+
+        if not channel_list:
+
+            channel_list.append("No channels")
+
+
+        channel_text = "\n".join(channel_list)
+
+
+        # Discord embed fields have a 1024-character limit
+        if len(channel_text) > 1000:
+
+            channel_text = channel_text[:997] + "..."
+
+
+        embed.add_field(
+            name=f"📁 {category_name}",
+            value=channel_text,
+            inline=False
+        )
+
+
+    # -----------------------------------------------------
+    # UNCATEGORIZED CHANNELS
+    # -----------------------------------------------------
+
+    uncategorized = []
+
+    uncategorized.extend(uncategorized_text)
+    uncategorized.extend(uncategorized_voice)
+
+
+    if uncategorized:
+
+        uncategorized_text_display = "\n".join(
+            uncategorized
+        )
+
+        if len(uncategorized_text_display) > 1000:
+
+            uncategorized_text_display = (
+                uncategorized_text_display[:997]
+                + "..."
+            )
+
+
+        embed.add_field(
+            name="⚠️ Uncategorized",
+            value=uncategorized_text_display,
+            inline=False
+        )
+
+    else:
+
+        embed.add_field(
+            name="✅ Uncategorized",
+            value="All channels are currently inside categories.",
+            inline=False
+        )
+
+
+    # -----------------------------------------------------
+    # SUMMARY
+    # -----------------------------------------------------
+
+    embed.add_field(
+        name="📊 Summary",
+        value=(
+            f"Categories: **{len(categories)}**\n"
+            f"Text channels: **{len(guild.text_channels)}**\n"
+            f"Voice channels: **{len(guild.voice_channels)}**"
+        ),
+        inline=False
+    )
+
+
+    embed.set_footer(
+        text="AI Server Assistant • Channel Analyzer"
     )
 
 
@@ -401,7 +568,7 @@ async def on_message(message: discord.Message):
 
 
     # =====================================================
-    # DIRECT SERVER QUESTIONS
+    # DIRECT MEMBER QUESTIONS
     # =====================================================
 
     member_questions = [
@@ -432,6 +599,76 @@ async def on_message(message: discord.Message):
 
 
     # =====================================================
+    # BUILD CHANNEL STRUCTURE FOR GEMINI
+    # =====================================================
+
+    channel_structure = []
+
+
+    for category in guild.categories:
+
+        channel_names = []
+
+
+        for channel in category.channels:
+
+            if isinstance(channel, discord.TextChannel):
+
+                channel_names.append(
+                    f"#{channel.name}"
+                )
+
+            elif isinstance(channel, discord.VoiceChannel):
+
+                channel_names.append(
+                    f"🔊 {channel.name}"
+                )
+
+
+        channel_structure.append(
+            f"{category.name}: "
+            + ", ".join(channel_names)
+        )
+
+
+    # -----------------------------------------------------
+    # UNCATEGORIZED CHANNELS
+    # -----------------------------------------------------
+
+    uncategorized = []
+
+
+    for channel in guild.channels:
+
+        if channel.category is None:
+
+            if isinstance(channel, discord.TextChannel):
+
+                uncategorized.append(
+                    f"#{channel.name}"
+                )
+
+            elif isinstance(channel, discord.VoiceChannel):
+
+                uncategorized.append(
+                    f"🔊 {channel.name}"
+                )
+
+
+    if uncategorized:
+
+        channel_structure.append(
+            "UNCATEGORIZED: "
+            + ", ".join(uncategorized)
+        )
+
+
+    channel_structure_text = "\n".join(
+        channel_structure
+    )
+
+
+    # =====================================================
     # SERVER CONTEXT FOR GEMINI
     # =====================================================
 
@@ -448,6 +685,10 @@ Text channels: {len(guild.text_channels)}
 Voice channels: {len(guild.voice_channels)}
 Categories: {len(guild.categories)}
 
+CHANNEL STRUCTURE
+-----------------
+{channel_structure_text}
+
 USER INFORMATION
 ----------------
 User: {message.author.display_name}
@@ -460,30 +701,37 @@ INSTRUCTIONS
 ------------
 Answer the user's question naturally and helpfully.
 
-You know the server information listed above.
+You know the server information and channel structure
+listed above.
 
 If the user asks about growing, improving, managing,
-or organizing the server, use the available server
+or organizing the server, use the actual server
 information when useful.
+
+If the user asks about channel organization, analyze
+the actual channel names and categories provided above.
 
 Give practical advice that a real Discord server owner
 could actually use.
 
 Keep responses reasonably concise.
 
-For advice questions, aim for around 500-1000 words
-maximum.
-
 Use headings and bullet points when they make the answer
 easier to read.
 
-Do not invent server statistics or information that was
-not provided.
+Do not invent server statistics, channels, categories,
+or information that was not provided.
 
 You are an assistant for the server, not the server owner.
 
-Do not claim that you performed an action on Discord
-unless the bot actually performed that action.
+IMPORTANT:
+You can currently ONLY provide advice.
+
+Do not claim that you moved, renamed, deleted, created,
+or modified anything on Discord.
+
+Do not claim that you performed an action unless the bot
+actually performed that action.
 """
 
 
