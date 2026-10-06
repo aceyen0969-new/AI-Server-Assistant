@@ -8,6 +8,7 @@ from ai.provider_router import ask_with_fallback
 
 ALLOWED_ACTIONS = {
     "move_channel",
+    "rename_channel",
 }
 
 
@@ -94,6 +95,33 @@ def find_channel_by_name(
 ):
     """Find a text or voice channel by name."""
 
+    if not isinstance(
+        name,
+        str,
+    ):
+        return None
+
+    # Prefer an exact-case match.
+    exact_matches = []
+
+    for channel in guild.channels:
+
+        if not isinstance(
+            channel,
+            (
+                discord.TextChannel,
+                discord.VoiceChannel,
+            ),
+        ):
+            continue
+
+        if channel.name == name:
+            exact_matches.append(channel)
+
+    if len(exact_matches) == 1:
+        return exact_matches[0]
+
+    # Fall back to case-insensitive matching.
     normalized = normalize_name(name)
 
     matches = []
@@ -122,7 +150,13 @@ def find_category_by_name(
     guild: discord.Guild,
     name: str,
 ):
-    """Find a category by its exact normalized name."""
+    """Find a category by name."""
+
+    if not isinstance(
+        name,
+        str,
+    ):
+        return None
 
     normalized = normalize_name(name)
 
@@ -156,8 +190,8 @@ def build_planner_prompt(
     return f"""
 You are the action planner for a Discord server management assistant.
 
-Your ONLY job is to convert the user's request into a
-safe, structured Discord action.
+Your ONLY job is to convert the user's request into safe,
+structured Discord actions.
 
 USER REQUEST:
 {user_request}
@@ -167,81 +201,166 @@ SERVER CONTEXT:
 
 ALLOWED ACTIONS:
 - move_channel
+- rename_channel
 
 IMPORTANT:
 
 The server context contains the REAL Discord channels
 and categories.
 
+The Python application will resolve channel and category
+names into real Discord IDs.
+
+NEVER invent Discord IDs.
+
+========================================
+NAME MATCHING
+========================================
+
+When multiple channels have names that differ only by
+capitalization, use the exact capitalization provided
+by the user.
+
+Example:
+
+Server:
+- general
+- General
+
+User says:
+"general"
+
+Select:
+"general"
+
+User says:
+"General"
+
+Select:
+"General"
+
+Do NOT return an empty action merely because two channel
+names differ only by capitalization.
+
+========================================
+MOVE CHANNEL
+========================================
+
 For move_channel:
 
-- channel_id MUST be the ID of the channel the user wants moved.
-- category_id MUST be the ID of the destination category.
-- Only objects with "type": "category" can be used as category_id.
-- Text channels have "type": "text".
-- Voice channels have "type": "voice".
-- Never use a text channel as category_id.
-- Never use a voice channel as category_id.
-- Never invent IDs.
+The user wants an existing text or voice channel
+moved into an existing category.
 
-CATEGORY RULES:
+Required fields:
 
-1. If the user explicitly names a destination category,
-   find that category by name.
+- action
+- channel_name
+- category_name
 
-2. The destination MUST have:
-   "type": "category"
-
-3. Match the category name case-insensitively.
-
-4. NEVER use a channel with the same name as the requested
-   category if that channel is not a category.
-
-5. NEVER substitute a different category.
-
-6. If the requested category does not exist,
-   return:
-
-{{"actions": []}}
-
-CHANNEL RULES:
-
-1. Find the requested channel by name.
-
-2. Match the channel name case-insensitively.
-
-3. The channel MUST have type "text" or "voice".
-
-4. Never invent channel IDs.
-
-5. If the requested channel does not exist,
-   return:
-
-{{"actions": []}}
-
-OUTPUT:
-
-Return ONLY valid JSON.
-
-For a valid move:
+Example:
 
 {{
     "actions": [
         {{
             "action": "move_channel",
-            "channel_id": 123456789,
-            "category_id": 987654321
+            "channel_name": "gaming",
+            "category_name": "Text Channels"
         }}
     ]
 }}
 
-If the request cannot be safely converted into a valid
-move_channel action:
+Rules:
+
+1. Find the requested channel by name.
+2. Match channel names case-insensitively unless exact
+   capitalization identifies one specific channel.
+3. The channel must be a text or voice channel.
+4. Find the requested destination by category name.
+5. The destination MUST actually be a category.
+6. Match category names case-insensitively.
+7. Never use a text or voice channel as a category.
+8. Never invent IDs.
+9. Never substitute a different category.
+10. If the requested channel or category does not exist,
+    return:
+
+{{"actions": []}}
+
+========================================
+RENAME CHANNEL
+========================================
+
+For rename_channel:
+
+The user wants an existing text or voice channel
+to receive a new name.
+
+Required fields:
+
+- action
+- channel_name
+- new_name
+
+Example:
+
+{{
+    "actions": [
+        {{
+            "action": "rename_channel",
+            "channel_name": "general",
+            "new_name": "chat"
+        }}
+    ]
+}}
+
+Rules:
+
+1. Find the existing channel by name.
+2. Match the channel using the user's capitalization
+   when that distinguishes between channels.
+3. The channel must be a text or voice channel.
+4. The new_name must be a non-empty string.
+5. Do not invent the existing channel.
+6. Do not return a Discord ID.
+7. If the requested channel does not exist,
+   return:
+
+{{"actions": []}}
+
+========================================
+OUTPUT
+========================================
+
+Return ONLY valid JSON.
+
+You may return multiple actions if the user's request
+clearly asks for multiple independent changes.
+
+Example:
+
+{{
+    "actions": [
+        {{
+            "action": "rename_channel",
+            "channel_name": "general",
+            "new_name": "chat"
+        }},
+        {{
+            "action": "move_channel",
+            "channel_name": "gaming",
+            "category_name": "Text Channels"
+        }}
+    ]
+}}
+
+If the request cannot be safely converted into valid
+actions, return:
 
 {{"actions": []}}
 
 NEVER perform the Discord action yourself.
-ONLY return the structured JSON.
+
+ONLY return structured JSON.
 """
 
 
@@ -249,7 +368,7 @@ def validate_action(
     action: dict,
     guild: discord.Guild,
 ) -> bool:
-    """Validate one AI-generated action."""
+    """Validate one resolved action."""
 
     if not isinstance(
         action,
@@ -257,10 +376,14 @@ def validate_action(
     ):
         return False
 
-    if action.get("action") not in ALLOWED_ACTIONS:
+    action_type = action.get(
+        "action"
+    )
+
+    if action_type not in ALLOWED_ACTIONS:
         return False
 
-    if action["action"] == "move_channel":
+    if action_type == "move_channel":
 
         channel_id = action.get(
             "channel_id"
@@ -313,6 +436,54 @@ def validate_action(
 
         return True
 
+    if action_type == "rename_channel":
+
+        channel_id = action.get(
+            "channel_id"
+        )
+
+        new_name = action.get(
+            "new_name"
+        )
+
+        if not isinstance(
+            channel_id,
+            int,
+        ):
+            return False
+
+        if not isinstance(
+            new_name,
+            str,
+        ):
+            return False
+
+        new_name = new_name.strip()
+
+        if not new_name:
+            return False
+
+        if len(new_name) > 100:
+            return False
+
+        channel = guild.get_channel(
+            channel_id
+        )
+
+        if channel is None:
+            return False
+
+        if not isinstance(
+            channel,
+            (
+                discord.TextChannel,
+                discord.VoiceChannel,
+            ),
+        ):
+            return False
+
+        return True
+
     return False
 
 
@@ -320,13 +491,7 @@ def resolve_action(
     action: dict,
     guild: discord.Guild,
 ) -> dict | None:
-    """
-    Replace AI-provided IDs with IDs resolved
-    deterministically from the Discord server.
-
-    This prevents the AI from inventing or choosing
-    incorrect Discord IDs.
-    """
+    """Resolve AI-provided names into real Discord IDs."""
 
     if not isinstance(
         action,
@@ -334,60 +499,106 @@ def resolve_action(
     ):
         return None
 
-    if action.get("action") != "move_channel":
-        return None
-
-    channel_name = action.get(
-        "channel_name"
+    action_type = action.get(
+        "action"
     )
 
-    category_name = action.get(
-        "category_name"
-    )
+    if action_type == "move_channel":
 
-    if not isinstance(
-        channel_name,
-        str,
-    ):
-        return None
+        channel_name = action.get(
+            "channel_name"
+        )
 
-    if not isinstance(
-        category_name,
-        str,
-    ):
-        return None
+        category_name = action.get(
+            "category_name"
+        )
 
-    channel = find_channel_by_name(
-        guild,
-        channel_name,
-    )
+        if not isinstance(
+            channel_name,
+            str,
+        ):
+            return None
 
-    category = find_category_by_name(
-        guild,
-        category_name,
-    )
+        if not isinstance(
+            category_name,
+            str,
+        ):
+            return None
 
-    if channel is None:
-        return None
+        channel = find_channel_by_name(
+            guild,
+            channel_name,
+        )
 
-    if category is None:
-        return None
+        category = find_category_by_name(
+            guild,
+            category_name,
+        )
 
-    return {
-        "action": "move_channel",
-        "channel_id": channel.id,
-        "category_id": category.id,
-    }
+        if channel is None:
+            return None
+
+        if category is None:
+            return None
+
+        return {
+            "action": "move_channel",
+            "channel_id": channel.id,
+            "category_id": category.id,
+        }
+
+    if action_type == "rename_channel":
+
+        channel_name = action.get(
+            "channel_name"
+        )
+
+        new_name = action.get(
+            "new_name"
+        )
+
+        if not isinstance(
+            channel_name,
+            str,
+        ):
+            return None
+
+        if not isinstance(
+            new_name,
+            str,
+        ):
+            return None
+
+        new_name = new_name.strip()
+
+        if not new_name:
+            return None
+
+        if len(new_name) > 100:
+            return None
+
+        channel = find_channel_by_name(
+            guild,
+            channel_name,
+        )
+
+        if channel is None:
+            return None
+
+        return {
+            "action": "rename_channel",
+            "channel_id": channel.id,
+            "new_name": new_name,
+        }
+
+    return None
 
 
 async def plan_actions(
     guild: discord.Guild,
     user_request: str,
 ):
-    """
-    Convert a natural-language request into
-    validated Discord actions.
-    """
+    """Convert a natural-language request into validated actions."""
 
     prompt = build_planner_prompt(
         guild,
@@ -497,14 +708,6 @@ async def plan_actions(
 
     for action in raw_actions:
 
-        # New preferred format:
-        #
-        # {
-        #     "action": "move_channel",
-        #     "channel_name": "gaming",
-        #     "category_name": "Text Channels"
-        # }
-
         resolved = resolve_action(
             action,
             guild,
@@ -522,8 +725,8 @@ async def plan_actions(
 
             continue
 
-        # Backwards-compatible support for
-        # actions that already contain IDs.
+        # Backwards-compatible support for actions
+        # that already contain valid Discord IDs.
 
         if validate_action(
             action,

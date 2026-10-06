@@ -32,7 +32,6 @@ async def setup(bot):
         interaction: discord.Interaction,
         request: str,
     ):
-
         await interaction.response.defer()
 
         guild = interaction.guild
@@ -43,10 +42,6 @@ async def setup(bot):
             )
             return
 
-        # -------------------------------------------------
-        # AI ACTION PLANNER
-        # -------------------------------------------------
-
         planned = await plan_actions(
             guild,
             request,
@@ -54,7 +49,7 @@ async def setup(bot):
 
         actions = planned.get(
             "actions",
-            []
+            [],
         )
 
         if not actions:
@@ -64,10 +59,6 @@ async def setup(bot):
             )
             return
 
-        # -------------------------------------------------
-        # CREATE APPROVAL REQUESTS
-        # -------------------------------------------------
-
         created = 0
 
         for action in actions:
@@ -76,122 +67,231 @@ async def setup(bot):
                 "action"
             )
 
-            if action_type != "move_channel":
+            # ========================================
+            # MOVE CHANNEL
+            # ========================================
+
+            if action_type == "move_channel":
+
+                channel_id = action.get(
+                    "channel_id"
+                )
+
+                category_id = action.get(
+                    "category_id"
+                )
+
+                channel = guild.get_channel(
+                    channel_id
+                )
+
+                category = guild.get_channel(
+                    category_id
+                )
+
+                if channel is None:
+                    continue
+
+                if category is None:
+                    continue
+
+                if not isinstance(
+                    category,
+                    discord.CategoryChannel,
+                ):
+                    continue
+
+                if not isinstance(
+                    channel,
+                    (
+                        discord.TextChannel,
+                        discord.VoiceChannel,
+                    ),
+                ):
+                    continue
+
+                action_request = ActionRequest(
+                    action="move_channel",
+                    target_id=channel.id,
+                    target_name=channel.name,
+                    reason=request,
+                    data={
+                        "channel_id": channel.id,
+                        "category_id": category.id,
+                    },
+                )
+
+                decision = evaluate_action(
+                    action_request
+                )
+
+                if not decision["allowed"] and not decision["requires_approval"]:
+                    continue
+
+                if not decision["requires_approval"]:
+                    continue
+
+                request_id = str(
+                    uuid.uuid4()
+                )
+
+                create_approval_request(
+                    request_id=request_id,
+                    action="move_channel",
+                    target_id=channel.id,
+                    target_name=channel.name,
+                    reason=request,
+                    data={
+                        "channel_id": channel.id,
+                        "category_id": category.id,
+                    },
+                )
+
+                embed = discord.Embed(
+                    title="AI Organization Request",
+                    description=(
+                        f"**Action:** `move_channel`\n"
+                        f"**Channel:** {channel.mention}\n"
+                        f"**New Category:** `{category.name}`\n"
+                        f"**Request:** {request}\n\n"
+                        "This change requires server-owner approval."
+                    ),
+                    color=discord.Color.orange(),
+                )
+
+                embed.set_footer(
+                    text="AI Server Assistant"
+                )
+
+                view = ApprovalView(
+                    request_id=request_id,
+                    allowed_user_id=guild.owner_id,
+                    guild=guild,
+                )
+
+                await interaction.followup.send(
+                    embed=embed,
+                    view=view,
+                )
+
+                created += 1
+
                 continue
 
-            channel_id = action.get(
-                "channel_id"
-            )
+            # ========================================
+            # RENAME CHANNEL
+            # ========================================
 
-            category_id = action.get(
-                "category_id"
-            )
+            if action_type == "rename_channel":
 
-            channel = guild.get_channel(
-                channel_id
-            )
+                channel_id = action.get(
+                    "channel_id"
+                )
 
-            category = guild.get_channel(
-                category_id
-            )
+                new_name = action.get(
+                    "new_name"
+                )
 
-            if channel is None:
+                channel = guild.get_channel(
+                    channel_id
+                )
+
+                if channel is None:
+                    continue
+
+                if not isinstance(
+                    channel,
+                    (
+                        discord.TextChannel,
+                        discord.VoiceChannel,
+                    ),
+                ):
+                    continue
+
+                if not isinstance(
+                    new_name,
+                    str,
+                ):
+                    continue
+
+                new_name = new_name.strip()
+
+                if not new_name:
+                    continue
+
+                if len(new_name) > 100:
+                    continue
+
+                action_request = ActionRequest(
+                    action="rename_channel",
+                    target_id=channel.id,
+                    target_name=channel.name,
+                    reason=request,
+                    data={
+                        "channel_id": channel.id,
+                        "new_name": new_name,
+                    },
+                )
+
+                decision = evaluate_action(
+                    action_request
+                )
+
+                if not decision["allowed"] and not decision["requires_approval"]:
+                    continue
+
+                if not decision["requires_approval"]:
+                    continue
+
+                request_id = str(
+                    uuid.uuid4()
+                )
+
+                create_approval_request(
+                    request_id=request_id,
+                    action="rename_channel",
+                    target_id=channel.id,
+                    target_name=channel.name,
+                    reason=request,
+                    data={
+                        "channel_id": channel.id,
+                        "new_name": new_name,
+                    },
+                )
+
+                embed = discord.Embed(
+                    title="AI Organization Request",
+                    description=(
+                        f"**Action:** `rename_channel`\n"
+                        f"**Channel:** {channel.mention}\n"
+                        f"**New Name:** `{new_name}`\n"
+                        f"**Request:** {request}\n\n"
+                        "This change requires server-owner approval."
+                    ),
+                    color=discord.Color.orange(),
+                )
+
+                embed.set_footer(
+                    text="AI Server Assistant"
+                )
+
+                view = ApprovalView(
+                    request_id=request_id,
+                    allowed_user_id=guild.owner_id,
+                    guild=guild,
+                )
+
+                await interaction.followup.send(
+                    embed=embed,
+                    view=view,
+                )
+
+                created += 1
+
                 continue
-
-            if category is None:
-                continue
-
-            if not isinstance(
-                category,
-                discord.CategoryChannel,
-            ):
-                continue
-
-            # -------------------------------------------------
-            # SECURITY ACTION REQUEST
-            # -------------------------------------------------
-
-            action_request = ActionRequest(
-                action="move_channel",
-                target_id=channel.id,
-                target_name=channel.name,
-                reason=request,
-                data={
-                    "channel_id": channel.id,
-                    "category_id": category.id,
-                },
-            )
-
-            decision = evaluate_action(
-                action_request
-            )
-
-            # -------------------------------------------------
-            # FAIL CLOSED
-            # -------------------------------------------------
-
-            if not decision["allowed"] and not decision[
-                "requires_approval"
-            ]:
-                continue
-
-            if not decision["requires_approval"]:
-                continue
-
-            # -------------------------------------------------
-            # CREATE APPROVAL
-            # -------------------------------------------------
-
-            request_id = str(
-                uuid.uuid4()
-            )
-
-            create_approval_request(
-                request_id=request_id,
-                action="move_channel",
-                target_id=channel.id,
-                target_name=channel.name,
-                reason=request,
-                data={
-                    "channel_id": channel.id,
-                    "category_id": category.id,
-                },
-            )
-
-            embed = discord.Embed(
-                title="AI Organization Request",
-                description=(
-                    f"**Action:** `move_channel`\n"
-                    f"**Channel:** {channel.mention}\n"
-                    f"**New Category:** `{category.name}`\n"
-                    f"**Request:** {request}\n\n"
-                    "This change requires server-owner approval."
-                ),
-                color=discord.Color.orange(),
-            )
-
-            embed.set_footer(
-                text="AI Server Assistant"
-            )
-
-            view = ApprovalView(
-                request_id=request_id,
-                allowed_user_id=guild.owner_id,
-                guild=guild,
-            )
-
-            await interaction.followup.send(
-                embed=embed,
-                view=view,
-            )
-
-            created += 1
-
-        # -------------------------------------------------
-        # NO VALID APPROVALS
-        # -------------------------------------------------
 
         if created == 0:
+
             await interaction.followup.send(
                 "No valid organization actions were created."
             )
