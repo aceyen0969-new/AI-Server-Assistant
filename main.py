@@ -1,4 +1,6 @@
+
 import os
+import asyncio
 
 import discord
 from discord.ext import commands
@@ -11,6 +13,9 @@ from commands import channels
 from commands import organize
 from commands import aistatus
 from commands import approvaltest
+
+from moderation.moderator import moderation_manager
+
 from ai import assistant
 
 
@@ -89,6 +94,38 @@ async def on_ready():
 
 
 # =========================================================
+# CENTRAL MESSAGE HANDLER
+# =========================================================
+
+@bot.event
+async def on_message(message):
+
+    # -----------------------------------------------------
+    # Moderation
+    # -----------------------------------------------------
+
+    await moderation_manager.handle_message(
+        message
+    )
+
+    # -----------------------------------------------------
+    # AI Assistant
+    # -----------------------------------------------------
+
+    await assistant.handle_message(
+        message
+    )
+
+    # -----------------------------------------------------
+    # Prefix Commands
+    # -----------------------------------------------------
+
+    await bot.process_commands(
+        message
+    )
+
+
+# =========================================================
 # START BOT
 # =========================================================
 
@@ -98,11 +135,11 @@ async def main():
 
         await load_features()
 
-        await bot.start(DISCORD_TOKEN)
+        await bot.start(
+            DISCORD_TOKEN
+        )
 
 
 print("Starting AI Server Assistant...")
-
-import asyncio
 
 asyncio.run(main())

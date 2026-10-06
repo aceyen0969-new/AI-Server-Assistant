@@ -23,6 +23,13 @@ async def setup(bot):
         target: str,
         reason: str
     ):
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                "❌ This command can only be used inside a server.",
+                ephemeral=True
+            )
+            return
+
         request_id = str(uuid.uuid4())
 
         create_approval_request(
