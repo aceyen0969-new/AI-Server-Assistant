@@ -7,6 +7,12 @@ from ai.providers import (
     ask_groq
 )
 
+from ai.health import (
+    mark_success,
+    mark_failure,
+    is_available
+)
+
 
 # =========================================================
 # PROVIDERS
@@ -20,19 +26,17 @@ PROVIDERS = [
 
 
 # =========================================================
-# GEMINI QUOTA MEMORY
+# GEMINI QUOTA
 # =========================================================
 
 gemini_quota_reset_time = 0
 
 
-def extract_retry_seconds(error_text):
-    """
-    Extract Gemini's retryDelay from an error.
+# =========================================================
+# EXTRACT RETRY TIME
+# =========================================================
 
-    Example:
-    retryDelay': '65195s'
-    """
+def extract_retry_seconds(error_text):
 
     match = re.search(
         r"retryDelay['\"]?\s*:\s*['\"]?(\d+)s",
@@ -45,14 +49,11 @@ def extract_retry_seconds(error_text):
     return None
 
 
-def build_prompt(prompt, history):
-    """
-    Combine the current server context with previous
-    conversation messages.
+# =========================================================
+# BUILD CONVERSATION PROMPT
+# =========================================================
 
-    The AI providers themselves remain stateless.
-    The bot supplies the conversation history every time.
-    """
+def build_prompt(prompt, history):
 
     if not history:
         return prompt
@@ -60,15 +61,18 @@ def build_prompt(prompt, history):
     conversation_lines = []
 
     for message in history:
+
         role = message["role"]
         content = message["content"]
 
         if role == "user":
+
             conversation_lines.append(
                 f"USER:\n{content}"
             )
 
         elif role == "assistant":
+
             conversation_lines.append(
                 f"ASSISTANT:\n{content}"
             )
@@ -98,7 +102,7 @@ the same assistant throughout.
 
 
 # =========================================================
-# MAIN AI FUNCTION
+# ASK AI
 # =========================================================
 
 async def ask_ai(prompt, history=None):
@@ -107,11 +111,6 @@ async def ask_ai(prompt, history=None):
 
     if history is None:
         history = []
-
-
-    # =====================================================
-    # BUILD PROMPT WITH MEMORY
-    # =====================================================
 
     full_prompt = build_prompt(
         prompt,
@@ -123,8 +122,6 @@ async def ask_ai(prompt, history=None):
     # CHECK GEMINI QUOTA
     # =====================================================
 
-    providers_to_try = PROVIDERS
-
     if gemini_quota_reset_time > 0:
 
         remaining = (
@@ -134,36 +131,44 @@ async def ask_ai(prompt, history=None):
 
         if remaining > 0:
 
-            total_seconds = int(remaining)
+            total_seconds = int(
+                remaining
+            )
 
             hours = total_seconds // 3600
+
             minutes = (
                 total_seconds % 3600
             ) // 60
-            seconds = total_seconds % 60
+
+            seconds = (
+                total_seconds % 60
+            )
 
             print("----------------------------------------")
             print(
                 "⏭️ Skipping Gemini because "
                 "its quota is exhausted."
             )
+
             print(
                 f"⏳ Gemini quota reset in "
                 f"{hours}h {minutes}m {seconds}s"
             )
-            print("----------------------------------------")
 
-            providers_to_try = [
-                provider
-                for provider in PROVIDERS
-                if provider[0] != "Gemini"
-            ]
+            print("----------------------------------------")
 
         else:
 
             print("----------------------------------------")
-            print("🔄 Gemini quota should have reset.")
-            print("Trying Gemini again...")
+            print(
+                "🔄 Gemini quota should have reset."
+            )
+
+            print(
+                "Trying Gemini again..."
+            )
+
             print("----------------------------------------")
 
             gemini_quota_reset_time = 0
@@ -175,12 +180,36 @@ async def ask_ai(prompt, history=None):
 
     errors = []
 
-    for provider_name, provider_function in providers_to_try:
+    for provider_name, provider_function in PROVIDERS:
+
+        # -------------------------------------------------
+        # CHECK HEALTH
+        # -------------------------------------------------
+
+        if not is_available(provider_name):
+
+            print("----------------------------------------")
+
+            print(
+                f"⏭️ Skipping {provider_name} "
+                f"because it is unavailable."
+            )
+
+            print("----------------------------------------")
+
+            continue
+
 
         print("----------------------------------------")
+
         print(
             f"🤖 Trying {provider_name}..."
         )
+
+
+        # -------------------------------------------------
+        # CALL PROVIDER
+        # -------------------------------------------------
 
         try:
 
@@ -188,22 +217,41 @@ async def ask_ai(prompt, history=None):
                 full_prompt
             )
 
+
             if not answer:
+
                 raise RuntimeError(
-                    f"{provider_name} returned an empty response."
+                    f"{provider_name} returned "
+                    f"an empty response."
                 )
 
+
+            # ---------------------------------------------
+            # SUCCESS
+            # ---------------------------------------------
+
+            mark_success(
+                provider_name
+            )
+
+
             print(
-                f"✅ {provider_name} responded successfully."
+                f"✅ {provider_name} "
+                f"responded successfully."
             )
 
             print("----------------------------------------")
+
 
             return {
                 "answer": answer,
                 "provider": provider_name
             }
 
+
+        # -------------------------------------------------
+        # FAILURE
+        # -------------------------------------------------
 
         except Exception as e:
 
@@ -212,6 +260,7 @@ async def ask_ai(prompt, history=None):
             errors.append(
                 f"{provider_name}: {error_text}"
             )
+
 
             print(
                 f"❌ {provider_name} failed."
@@ -222,15 +271,30 @@ async def ask_ai(prompt, history=None):
             )
 
 
-            # =================================================
-            # GEMINI QUOTA DETECTION
-            # =================================================
+            # ---------------------------------------------
+            # RETRY TIME
+            # ---------------------------------------------
+
+            retry_seconds = extract_retry_seconds(
+                error_text
+            )
+
+
+            # ---------------------------------------------
+            # MARK PROVIDER UNAVAILABLE
+            # ---------------------------------------------
+
+            mark_failure(
+                provider_name,
+                retry_seconds
+            )
+
+
+            # ---------------------------------------------
+            # GEMINI QUOTA
+            # ---------------------------------------------
 
             if provider_name == "Gemini":
-
-                retry_seconds = extract_retry_seconds(
-                    error_text
-                )
 
                 if retry_seconds:
 
@@ -251,12 +315,13 @@ async def ask_ai(prompt, history=None):
 
 
     # =====================================================
-    # EVERYTHING FAILED
+    # ALL PROVIDERS FAILED
     # =====================================================
 
     print("----------------------------------------")
     print("❌ ALL AI PROVIDERS FAILED")
     print("----------------------------------------")
+
 
     return {
         "answer": None,
