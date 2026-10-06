@@ -1,4 +1,3 @@
-
 import os
 import asyncio
 
@@ -19,37 +18,33 @@ from moderation.moderator import moderation_manager
 
 from ai import assistant
 
+from analytics import observer
+from analytics.database import initialize_database
 
-# =========================================================
-# ENVIRONMENT VARIABLES
-# =========================================================
 
 load_dotenv()
 
+
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
+
 if not DISCORD_TOKEN:
-    raise RuntimeError("DISCORD_TOKEN is missing from .env")
+    raise RuntimeError(
+        "DISCORD_TOKEN is missing from .env"
+    )
 
-
-# =========================================================
-# DISCORD BOT
-# =========================================================
 
 intents = discord.Intents.default()
 
 intents.members = True
 intents.message_content = True
 
+
 bot = commands.Bot(
     command_prefix="!",
     intents=intents
 )
 
-
-# =========================================================
-# LOAD FEATURES
-# =========================================================
 
 async def load_features():
 
@@ -71,67 +66,60 @@ async def load_features():
 
     await cleanup.setup(bot)
 
-# =========================================================
-# BOT READY
-# =========================================================
 
 @bot.event
 async def on_ready():
 
     print("----------------------------------------")
-    print(f"Logged in as {bot.user}")
-    print(f"Connected to {len(bot.guilds)} server(s)")
+
+    print(
+        f"Logged in as {bot.user}"
+    )
+
+    print(
+        f"Connected to {len(bot.guilds)} server(s)"
+    )
+
     print("----------------------------------------")
 
     try:
 
         synced = await bot.tree.sync()
 
-        print(f"Synced {len(synced)} slash command(s)")
+        print(
+            f"Synced {len(synced)} slash command(s)"
+        )
 
     except Exception as e:
 
         print("Command sync error:")
+
         print(e)
 
 
-# =========================================================
-# CENTRAL MESSAGE HANDLER
-# =========================================================
-
 @bot.event
 async def on_message(message):
-
-    # -----------------------------------------------------
-    # Moderation
-    # -----------------------------------------------------
 
     await moderation_manager.handle_message(
         message
     )
 
-    # -----------------------------------------------------
-    # AI Assistant
-    # -----------------------------------------------------
+    await observer.handle_message(
+        message
+    )
 
     await assistant.handle_message(
         message
     )
-
-    # -----------------------------------------------------
-    # Prefix Commands
-    # -----------------------------------------------------
 
     await bot.process_commands(
         message
     )
 
 
-# =========================================================
-# START BOT
-# =========================================================
-
 async def main():
+
+    initialize_database()
 
     async with bot:
 
@@ -142,6 +130,11 @@ async def main():
         )
 
 
-print("Starting AI Server Assistant...")
+print(
+    "Starting AI Server Assistant..."
+)
 
-asyncio.run(main())
+
+asyncio.run(
+    main()
+)
