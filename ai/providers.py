@@ -7,12 +7,12 @@ from openai import OpenAI
 from groq import Groq
 
 
-# =========================================================
-# LOAD ENVIRONMENT
-# =========================================================
-
 load_dotenv()
 
+
+# =========================================================
+# API KEYS
+# =========================================================
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -53,10 +53,8 @@ if GROQ_API_KEY:
 
 GEMINI_MODEL = "gemini-3.8-flash"
 
-# Specific OpenRouter free model
 OPENROUTER_MODEL = "openrouter/free"
 
-# Current Groq replacement for the deprecated Llama model
 GROQ_MODEL = "openai/gpt-oss-120b"
 
 
@@ -86,7 +84,7 @@ async def ask_gemini(prompt):
 
 
 # =========================================================
-# OPENROUTER
+# OPENROUTER NORMAL CHAT
 # =========================================================
 
 async def ask_openrouter(prompt):
@@ -105,8 +103,8 @@ async def ask_openrouter(prompt):
                 "content": """
 You are the AI Server Assistant inside a Discord server.
 
-Your job is to directly answer the user's question using the
-server information provided in the prompt.
+Your job is to directly answer the user's question using
+the server information provided in the prompt.
 
 IMPORTANT BEHAVIOR:
 
@@ -153,8 +151,69 @@ Respond directly to the user's request.
 
     return answer
 
+
 # =========================================================
-# GROQ
+# OPENROUTER JSON
+# =========================================================
+
+async def ask_openrouter_json(prompt):
+
+    if openrouter_client is None:
+        raise RuntimeError(
+            "OpenRouter API key is not configured."
+        )
+
+    response = await asyncio.to_thread(
+        openrouter_client.chat.completions.create,
+        model=OPENROUTER_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": """
+You are a Discord server organization planner.
+
+You MUST return a valid JSON object.
+
+Return ONLY JSON.
+
+Do not return:
+- Markdown
+- Code fences
+- Explanations outside JSON
+- Greetings
+- Safety classifications
+- "User Safety: safe"
+- Analysis
+
+Follow the exact JSON structure requested by the user.
+"""
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        response_format={
+            "type": "json_object"
+        }
+    )
+
+    answer = (
+        response.choices[0]
+        .message
+        .content
+    )
+
+    if not answer:
+        raise RuntimeError(
+            "OpenRouter returned an empty JSON response."
+        )
+
+    return answer
+
+
+# =========================================================
+# GROQ NORMAL CHAT
 # =========================================================
 
 async def ask_groq(prompt):
@@ -193,6 +252,65 @@ async def ask_groq(prompt):
     if not answer:
         raise RuntimeError(
             "Groq returned an empty response."
+        )
+
+    return answer
+
+
+# =========================================================
+# GROQ JSON
+# =========================================================
+
+async def ask_groq_json(prompt):
+
+    if groq_client is None:
+        raise RuntimeError(
+            "Groq API key is not configured."
+        )
+
+    response = await asyncio.to_thread(
+        groq_client.chat.completions.create,
+        model=GROQ_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": """
+You are a Discord server organization planner.
+
+You MUST return a valid JSON object.
+
+Return ONLY JSON.
+
+Do not return:
+- Markdown
+- Code fences
+- Explanations outside JSON
+- Greetings
+- Safety classifications
+- Analysis
+
+Follow the exact JSON structure requested by the user.
+"""
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        response_format={
+            "type": "json_object"
+        }
+    )
+
+    answer = (
+        response.choices[0]
+        .message
+        .content
+    )
+
+    if not answer:
+        raise RuntimeError(
+            "Groq returned an empty JSON response."
         )
 
     return answer
