@@ -1,67 +1,55 @@
-import os
-import asyncio
-
 import discord
-from dotenv import load_dotenv
-from google import genai
 
 from utils.messages import send_long_message
+from ai.manager import ask_ai
 
-
-# =========================================================
-# LOAD ENVIRONMENT VARIABLES
-# =========================================================
-
-load_dotenv()
-
-
-# =========================================================
-# SETTINGS
-# =========================================================
 
 AI_CHANNEL_NAME = "ai-assistant"
 
-GEMINI_MODEL = "gemini-3.8-flash"
-
-
 # =========================================================
-# GEMINI CLIENT
+# CONVERSATION MEMORY
 # =========================================================
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Memory is separated by Discord channel.
+#
+# Example:
+#
+# {
+#     123456789: [
+#         {
+#             "role": "user",
+#             "content": "How can I improve my server?"
+#         },
+#         {
+#             "role": "assistant",
+#             "content": "You could improve..."
+#         }
+#     ]
+# }
 
-if not GEMINI_API_KEY:
+conversation_memory = {}
 
-    raise RuntimeError(
-        "GEMINI_API_KEY is missing from .env"
-    )
+# Remember the last 20 messages
+# = roughly 10 user/assistant exchanges.
+MAX_HISTORY = 20
 
-
-client = genai.Client(
-    api_key=GEMINI_API_KEY
-)
-
-
-# =========================================================
-# SETUP
-# =========================================================
 
 async def setup(bot):
 
     @bot.event
     async def on_message(message: discord.Message):
 
-        # -------------------------------------------------
+        # =================================================
         # IGNORE BOTS
-        # -------------------------------------------------
+        # =================================================
 
         if message.author.bot:
             return
 
 
-        # -------------------------------------------------
-        # ONLY RESPOND IN AI-ASSISTANT
-        # -------------------------------------------------
+        # =================================================
+        # ONLY RESPOND IN AI CHANNEL
+        # =================================================
 
         if message.channel.name != AI_CHANNEL_NAME:
 
@@ -70,15 +58,9 @@ async def setup(bot):
             return
 
 
-        question = message.content.strip()
-
-        if not question:
-            return
-
-
-        # -------------------------------------------------
-        # SERVER CHECK
-        # -------------------------------------------------
+        # =================================================
+        # IGNORE DMS
+        # =================================================
 
         guild = message.guild
 
@@ -87,7 +69,17 @@ async def setup(bot):
 
 
         # =================================================
-        # DIRECT MEMBER QUESTIONS
+        # GET QUESTION
+        # =================================================
+
+        question = message.content.strip()
+
+        if not question:
+            return
+
+
+        # =================================================
+        # DIRECT MEMBER COUNT QUESTIONS
         # =================================================
 
         member_questions = [
@@ -102,9 +94,7 @@ async def setup(bot):
             "how many members are here"
         ]
 
-
         question_lower = question.lower()
-
 
         if any(
             phrase in question_lower
@@ -126,11 +116,9 @@ async def setup(bot):
 
         channel_structure = []
 
-
         for category in guild.categories:
 
             channel_names = []
-
 
             for channel in category.channels:
 
@@ -142,7 +130,6 @@ async def setup(bot):
                     channel_names.append(
                         f"#{channel.name}"
                     )
-
 
                 elif isinstance(
                     channel,
@@ -166,7 +153,6 @@ async def setup(bot):
 
         uncategorized = []
 
-
         for channel in guild.channels:
 
             if channel.category is None:
@@ -179,7 +165,6 @@ async def setup(bot):
                     uncategorized.append(
                         f"#{channel.name}"
                     )
-
 
                 elif isinstance(
                     channel,
@@ -229,8 +214,8 @@ USER INFORMATION
 ----------------
 User: {message.author.display_name}
 
-USER QUESTION
--------------
+CURRENT USER QUESTION
+---------------------
 {question}
 
 INSTRUCTIONS
@@ -272,122 +257,105 @@ actually performed that action.
 
 
         # =================================================
-        # ASK GEMINI
+        # GET CONVERSATION MEMORY
+        # =================================================
+
+        channel_id = message.channel.id
+
+        if channel_id not in conversation_memory:
+
+            conversation_memory[channel_id] = []
+
+
+        history = conversation_memory[channel_id]
+
+
+        # =================================================
+        # ASK AI
         # =================================================
 
         async with message.channel.typing():
 
-            for attempt in range(3):
-
-                try:
-
-                    response = client.models.generate_content(
-                        model=GEMINI_MODEL,
-                        contents=server_context
-                    )
+            result = await ask_ai(
+                server_context,
+                history
+            )
 
 
-                    answer = response.text
+        answer = result.get("answer")
+
+        provider = result.get("provider")
 
 
-                    if not answer:
+        # =================================================
+        # AI FAILURE
+        # =================================================
 
-                        answer = (
-                            "I couldn't generate "
-                            "a response."
-                        )
-
-
-                    await send_long_message(
-                        message.channel,
-                        answer
-                    )
-
-                    return
-
-
-                except Exception as e:
-
-                    error_text = str(e)
-
-
-                    print(
-                        "----------------------------------------"
-                    )
-
-                    print(
-                        f"Gemini attempt "
-                        f"{attempt + 1} failed"
-                    )
-
-                    print(
-                        f"Error type: "
-                        f"{type(e).__name__}"
-                    )
-
-                    print(
-                        f"Error: {error_text}"
-                    )
-
-                    print(
-                        "----------------------------------------"
-                    )
-
-
-                    # =====================================
-                    # DAILY QUOTA
-                    # =====================================
-
-                    if (
-                        "429" in error_text
-                        or
-                        "RESOURCE_EXHAUSTED"
-                        in error_text
-                    ):
-
-                        await message.channel.send(
-                            "⚠️ **Gemini's daily "
-                            "free-tier quota has "
-                            "been reached.**\n\n"
-                            "The AI should become "
-                            "available again when "
-                            "the quota resets.\n\n"
-                            "This is a Gemini API "
-                            "limit, not a Discord "
-                            "bot error."
-                        )
-
-                        return
-
-
-                    # =====================================
-                    # TEMPORARY SERVER ERROR
-                    # =====================================
-
-                    if (
-                        "503" in error_text
-                        or
-                        "UNAVAILABLE"
-                        in error_text
-                    ):
-
-                        if attempt < 2:
-
-                            await asyncio.sleep(5)
-
-                            continue
-
-
-                    break
-
-
-            # =============================================
-            # ALL ATTEMPTS FAILED
-            # =============================================
+        if not answer:
 
             await message.channel.send(
-                "❌ Gemini couldn't process "
-                "the request right now. "
-                "Check the bot console "
-                "for the error."
+                "❌ **All AI providers are "
+                "currently unavailable.**\n\n"
+                "Gemini, OpenRouter, and Groq "
+                "could not process the request."
             )
+
+            return
+
+
+        # =================================================
+        # SAVE CONVERSATION
+        # =================================================
+
+        history.append(
+            {
+                "role": "user",
+                "content": question
+            }
+        )
+
+        history.append(
+            {
+                "role": "assistant",
+                "content": answer
+            }
+        )
+
+
+        # =================================================
+        # LIMIT MEMORY
+        # =================================================
+
+        if len(history) > MAX_HISTORY:
+
+            conversation_memory[channel_id] = (
+                history[-MAX_HISTORY:]
+            )
+
+
+        # =================================================
+        # SEND RESPONSE
+        # =================================================
+
+        await send_long_message(
+            message.channel,
+            answer
+        )
+
+
+        # =================================================
+        # LOG PROVIDER
+        # =================================================
+
+        print("----------------------------------------")
+
+        print(
+            f"🤖 AI Provider used: {provider}"
+        )
+
+        print(
+            f"🧠 Conversation memory: "
+            f"{len(conversation_memory[channel_id])} messages"
+        )
+
+        print("----------------------------------------")

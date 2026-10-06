@@ -1,5 +1,6 @@
 import os
 import asyncio
+import re
 
 import discord
 from dotenv import load_dotenv
@@ -32,20 +33,27 @@ GEMINI_MODEL = "gemini-3.8-flash"
 
 
 # =========================================================
-# CONFIRMATION VIEW
+# ORGANIZATION VIEW
 # =========================================================
 
 class OrganizationView(discord.ui.View):
 
-    def __init__(self, author_id: int):
+    def __init__(
+        self,
+        author_id: int,
+        guild: discord.Guild,
+        proposal: str
+    ):
 
         super().__init__(timeout=120)
 
         self.author_id = author_id
+        self.guild = guild
+        self.proposal = proposal
 
 
     # =====================================================
-    # CHECK USER
+    # USER CHECK
     # =====================================================
 
     async def interaction_check(
@@ -81,23 +89,253 @@ class OrganizationView(discord.ui.View):
         button: discord.ui.Button
     ):
 
-        # Disable both buttons
+        # Disable buttons immediately
 
         for item in self.children:
-
             item.disabled = True
-
 
         await interaction.response.edit_message(
             view=self
         )
 
 
+        # =================================================
+        # PERMISSION CHECK
+        # =================================================
+
+        me = self.guild.me
+
+        if me is None:
+
+            await interaction.followup.send(
+                "❌ I couldn't verify my permissions."
+            )
+
+            return
+
+
+        if not me.guild_permissions.manage_channels:
+
+            await interaction.followup.send(
+                "❌ I need the **Manage Channels** "
+                "permission to apply this organization."
+            )
+
+            return
+
+
+        # =================================================
+        # REFRESH SERVER DATA
+        # =================================================
+
+        try:
+
+            await self.guild.fetch_channels()
+
+        except Exception as e:
+
+            print(
+                "Failed to refresh channels:"
+            )
+
+            print(e)
+
+            await interaction.followup.send(
+                "❌ I couldn't refresh the server's "
+                "channel information."
+            )
+
+            return
+
+
+        # =================================================
+        # FIND CHANNELS FROM PROPOSAL
+        # =================================================
+
+        current_channels = {
+            channel.name.lower(): channel
+            for channel in self.guild.channels
+        }
+
+
+        # =================================================
+        # EXTRACT CHANNEL NAMES
+        # =================================================
+
+        proposed_channels = re.findall(
+            r"#([a-zA-Z0-9_\-]+)",
+            self.proposal
+        )
+
+
+        if not proposed_channels:
+
+            await interaction.followup.send(
+                "⚠️ I couldn't safely identify any "
+                "channels in the proposal.\n\n"
+                "No changes were made."
+            )
+
+            return
+
+
+        # Remove duplicates while preserving order
+
+        unique_channels = []
+
+        for name in proposed_channels:
+
+            if name.lower() not in [
+                existing.lower()
+                for existing in unique_channels
+            ]:
+
+                unique_channels.append(name)
+
+
+        # =================================================
+        # SAFETY CHECK
+        # =================================================
+
+        valid_channels = []
+
+        missing_channels = []
+
+        for name in unique_channels:
+
+            channel = current_channels.get(
+                name.lower()
+            )
+
+            if channel is None:
+
+                missing_channels.append(name)
+
+            else:
+
+                valid_channels.append(channel)
+
+
+        # =================================================
+        # NOTHING VALID
+        # =================================================
+
+        if not valid_channels:
+
+            await interaction.followup.send(
+                "⚠️ None of the channels in the AI "
+                "proposal could be safely matched "
+                "to the current server.\n\n"
+                "No changes were made."
+            )
+
+            return
+
+
+        # =================================================
+        # IMPORTANT SAFETY LIMIT
+        # =================================================
+
+        if len(valid_channels) > 50:
+
+            await interaction.followup.send(
+                "⚠️ The proposal contains too many "
+                "channels to safely modify at once.\n\n"
+                "No changes were made."
+            )
+
+            return
+
+
+        # =================================================
+        # APPLY ORGANIZATION
+        # =================================================
+
+        moved = 0
+        failed = 0
+
+        for channel in valid_channels:
+
+            try:
+
+                # -------------------------------------------------
+                # We currently only move channels that are already
+                # represented in the proposal.
+                #
+                # We do NOT delete or rename anything.
+                # -------------------------------------------------
+
+                if channel.category is not None:
+
+                    # Already categorized.
+                    # Leave it alone for now.
+                    continue
+
+
+                # -------------------------------------------------
+                # No automatic category creation yet.
+                #
+                # This version safely handles the first step:
+                # organizing uncategorized channels is prepared,
+                # but category selection still needs structured AI
+                # data before we move anything.
+                # -------------------------------------------------
+
+                failed += 1
+
+            except Exception as e:
+
+                print(
+                    f"Failed to process #{channel.name}:"
+                )
+
+                print(e)
+
+                failed += 1
+
+
+        # =================================================
+        # RESULT
+        # =================================================
+
+        if moved == 0:
+
+            await interaction.followup.send(
+                "⚠️ **Confirmation received.**\n\n"
+                "I verified the proposal and my "
+                "permissions, but I couldn't safely "
+                "determine the exact target categories "
+                "from the AI's text proposal.\n\n"
+                "🛡️ **No channels were changed.**\n\n"
+                "The next improvement will make the AI "
+                "return structured channel-to-category "
+                "instructions so Confirm can safely "
+                "apply them."
+            )
+
+            return
+
+
+        result = (
+            f"✅ **Organization applied.**\n\n"
+            f"Moved: **{moved}** channel(s)\n"
+            f"Failed: **{failed}** channel(s)"
+        )
+
+
+        if missing_channels:
+
+            result += (
+                "\n\n⚠️ Channels no longer found:\n"
+                + "\n".join(
+                    f"• #{name}"
+                    for name in missing_channels
+                )
+            )
+
+
         await interaction.followup.send(
-            "✅ **Proposal confirmed.**\n\n"
-            "No channels have been changed yet.\n\n"
-            "The next update will allow the bot to "
-            "actually apply approved organization changes."
+            result
         )
 
 
@@ -117,14 +355,11 @@ class OrganizationView(discord.ui.View):
     ):
 
         for item in self.children:
-
             item.disabled = True
-
 
         await interaction.response.edit_message(
             view=self
         )
-
 
         await interaction.followup.send(
             "❌ **Organization proposal cancelled.**\n\n"
@@ -139,7 +374,6 @@ class OrganizationView(discord.ui.View):
     async def on_timeout(self):
 
         for item in self.children:
-
             item.disabled = True
 
 
@@ -166,6 +400,31 @@ async def setup(bot):
             await interaction.response.send_message(
                 "This command can only be used inside "
                 "a server."
+            )
+
+            return
+
+
+        # =================================================
+        # PERMISSION CHECK
+        # =================================================
+
+        me = guild.me
+
+        if me is None:
+
+            await interaction.response.send_message(
+                "❌ I couldn't verify my permissions."
+            )
+
+            return
+
+
+        if not me.guild_permissions.manage_channels:
+
+            await interaction.response.send_message(
+                "❌ I need the **Manage Channels** "
+                "permission to organize channels."
             )
 
             return
@@ -224,7 +483,7 @@ async def setup(bot):
 
 
         # =================================================
-        # UNCATEGORIZED CHANNELS
+        # UNCATEGORIZED
         # =================================================
 
         uncategorized = []
@@ -293,15 +552,15 @@ IMPORTANT RULES:
 
 1. Do NOT claim that you changed anything.
 2. Do NOT invent existing channels.
-3. Do NOT pretend proposed categories already exist.
-4. Use the actual channel names when making suggestions.
-5. Do not suggest unnecessary changes if the server is
-   already organized well.
-6. Consider what each channel appears to be used for based
-   on its name.
-7. Keep the proposal practical for a real Discord server.
-8. Clearly distinguish proposed organization from the
-   current organization.
+3. Do NOT rename channels.
+4. Do NOT delete channels.
+5. Use the exact existing channel names.
+6. You may suggest existing categories.
+7. Clearly mark newly suggested categories as PROPOSED.
+8. Do not suggest unnecessary changes.
+9. Keep the organization practical.
+10. Clearly distinguish the current organization
+    from the proposed organization.
 
 FORMAT:
 
@@ -323,14 +582,14 @@ Brief explanation.
 
 
         # =================================================
-        # DISCORD LOADING STATE
+        # DEFER
         # =================================================
 
         await interaction.response.defer()
 
 
         # =================================================
-        # ASK GEMINI
+        # GEMINI
         # =================================================
 
         for attempt in range(3):
@@ -354,9 +613,9 @@ Brief explanation.
                     )
 
 
-                # =========================================
+                # =================================================
                 # EMBED
-                # =========================================
+                # =================================================
 
                 embed = discord.Embed(
                     title="🧠 AI Organization Proposal",
@@ -373,12 +632,14 @@ Brief explanation.
                 )
 
 
-                # =========================================
+                # =================================================
                 # BUTTONS
-                # =========================================
+                # =================================================
 
                 view = OrganizationView(
-                    author_id=interaction.user.id
+                    author_id=interaction.user.id,
+                    guild=guild,
+                    proposal=answer
                 )
 
 
@@ -411,9 +672,9 @@ Brief explanation.
                 return
 
 
-            # =============================================
+            # =================================================
             # ERROR
-            # =============================================
+            # =================================================
 
             except Exception as e:
 
@@ -434,49 +695,133 @@ Brief explanation.
                 )
 
 
-                # =========================================
-                # QUOTA
-                # =========================================
 
-                if (
-                    "429" in error_text
-                    or
-                    "RESOURCE_EXHAUSTED"
-                    in error_text
-                ):
+            # =========================================================
+            # QUOTA
+            # =========================================================
 
-                    print()
-                    print(
-                        "⚠️ GEMINI QUOTA EXCEEDED"
-                    )
+            if (
+                "429" in error_text
+                or
+                "RESOURCE_EXHAUSTED" in error_text
+            ):
 
-                    print(
-                        "The Gemini API free-tier quota "
-                        "has been reached."
-                    )
+                # ---------------------------------------------
+                # Get retry time from Gemini error
+                # ---------------------------------------------
 
-                    print(
-                        "Wait for the quota to reset."
-                    )
+                import re
 
-                    print(
-                        "----------------------------------------"
-                    )
+                retry_seconds = None
 
+                match = re.search(
+                    r"retryDelay.*?(\d+)s",
+                    error_text
+                )
 
-                    await interaction.followup.send(
-                        "⚠️ **Gemini's daily free-tier "
-                        "quota has been reached.**\n\n"
-                        "Try again after the quota resets."
+                if match:
+
+                    retry_seconds = int(
+                        match.group(1)
                     )
 
 
-                    return
+                # ---------------------------------------------
+                # Convert seconds into readable time
+                # ---------------------------------------------
+
+                if retry_seconds is not None:
+
+                    days = retry_seconds // 86400
+
+                    hours = (
+                        retry_seconds % 86400
+                    ) // 3600
+
+                    minutes = (
+                        retry_seconds % 3600
+                    ) // 60
+
+                    seconds = (
+                        retry_seconds % 60
+                    )
 
 
-                # =========================================
+                    time_parts = []
+
+
+                    if days:
+                        time_parts.append(
+                            f"{days}d"
+                        )
+
+
+                    if hours:
+                        time_parts.append(
+                            f"{hours}h"
+                        )
+
+
+                    if minutes:
+                        time_parts.append(
+                            f"{minutes}m"
+                        )
+
+
+                    if seconds:
+                        time_parts.append(
+                            f"{seconds}s"
+                        )
+
+
+                    reset_time = " ".join(
+                        time_parts
+                    )
+
+
+                else:
+
+                    reset_time = (
+                        "unknown"
+                    )
+
+
+                # ---------------------------------------------
+                # Terminal
+                # ---------------------------------------------
+
+                print(
+                    "⚠️ GEMINI QUOTA EXCEEDED"
+                )
+
+                print(
+                    f"⏳ Estimated quota reset: "
+                    f"{reset_time}"
+                )
+
+                print(
+                    "----------------------------------------"
+                )
+
+
+                # ---------------------------------------------
+                # Discord
+                # ---------------------------------------------
+
+                await interaction.followup.send(
+                    "⚠️ **Gemini's daily free-tier "
+                    "quota has been reached.**\n\n"
+                    f"⏳ **Estimated reset in: "
+                    f"{reset_time}**\n\n"
+                    "The bot will be able to use Gemini "
+                    "again after the quota resets."
+                )
+
+                return
+
+                # =================================================
                 # 503
-                # =========================================
+                # =================================================
 
                 if (
                     "503" in error_text
@@ -487,7 +832,6 @@ Brief explanation.
 
                     if attempt < 2:
 
-                        print()
                         print(
                             "⚠️ GEMINI TEMPORARILY "
                             "UNAVAILABLE"
@@ -497,50 +841,19 @@ Brief explanation.
                             "Retrying in 5 seconds..."
                         )
 
-                        print(
-                            "----------------------------------------"
-                        )
-
-
                         await asyncio.sleep(5)
 
                         continue
 
 
-                    print()
-                    print(
-                        "❌ GEMINI STILL UNAVAILABLE"
-                    )
-
-                    print(
-                        "All retry attempts failed."
-                    )
-
-                    print(
-                        "----------------------------------------"
-                    )
-
                     break
 
-
-                # =========================================
-                # OTHER ERROR
-                # =========================================
-
-                print()
-                print(
-                    "❌ UNKNOWN GEMINI ERROR"
-                )
-
-                print(
-                    "----------------------------------------"
-                )
 
                 break
 
 
         # =================================================
-        # ALL ATTEMPTS FAILED
+        # FAILED
         # =================================================
 
         await interaction.followup.send(
