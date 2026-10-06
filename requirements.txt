@@ -1,3 +1,7 @@
 discord.py
 python-dotenv
 google-genai
+openai
+groq
+anthropic
+better-profanity

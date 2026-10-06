@@ -3,7 +3,10 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 
-DATABASE_PATH = Path("analytics") / "analytics.db"
+DATABASE_PATH = (
+    Path(__file__).resolve().parent
+    / "analytics.db"
+)
 
 
 def get_connection():
