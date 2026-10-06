@@ -1,34 +1,96 @@
+import time
 from collections import defaultdict
 
+VIOLATION_DECAY_SECONDS = 10 * 60
 
 class ViolationTracker:
+
     def __init__(self):
-        # Stores violations separately for each server and user.
-        #
-        # Structure:
-        # {
-        #     guild_id: {
-        #         user_id: violation_count
-        #     }
-        # }
         self.violations = defaultdict(
-            lambda: defaultdict(int)
+            lambda: defaultdict(
+                lambda: {
+                    "count": 0,
+                    "last_violation": 0.0
+                }
+            )
         )
 
-    def add_violation(self, guild_id, user_id):
-        """Add one violation to a user."""
+    def _apply_decay(self, guild_id: int, user_id: int):
+        record = self.violations[guild_id][user_id]
 
-        self.violations[guild_id][user_id] += 1
+        count = record["count"]
+        last_violation = record["last_violation"]
 
-        return self.violations[guild_id][user_id]
+        if count <= 0 or last_violation <= 0:
+            return
 
-    def get_violations(self, guild_id, user_id):
-        """Return the user's current violation count."""
+        elapsed = time.time() - last_violation
 
-        return self.violations[guild_id][user_id]
+        decay_amount = int(
+            elapsed // VIOLATION_DECAY_SECONDS
+        )
 
-    def reset_user(self, guild_id, user_id):
-        """Reset a user's violations."""
+        if decay_amount <= 0:
+            return
+
+        new_count = max(
+            0,
+            count - decay_amount
+        )
+
+        record["count"] = new_count
+
+        if new_count == 0:
+            self.violations[guild_id].pop(
+                user_id,
+                None
+            )
+            return
+
+        record["last_violation"] += (
+            decay_amount
+            * VIOLATION_DECAY_SECONDS
+        )
+
+    def add_violation(
+        self,
+        guild_id: int,
+        user_id: int
+    ) -> int:
+
+        self._apply_decay(
+            guild_id,
+            user_id
+        )
+
+        record = self.violations[guild_id][user_id]
+
+        record["count"] += 1
+        record["last_violation"] = time.time()
+
+        return record["count"]
+
+    def get_violations(
+        self,
+        guild_id: int,
+        user_id: int
+    ) -> int:
+
+        self._apply_decay(
+            guild_id,
+            user_id
+        )
+
+        if user_id not in self.violations[guild_id]:
+            return 0
+
+        return self.violations[guild_id][user_id]["count"]
+
+    def reset_user(
+        self,
+        guild_id: int,
+        user_id: int
+    ):
 
         if guild_id in self.violations:
             self.violations[guild_id].pop(
@@ -36,13 +98,14 @@ class ViolationTracker:
                 None
             )
 
-    def reset_guild(self, guild_id):
-        """Reset all violations in a server."""
+    def reset_guild(
+        self,
+        guild_id: int
+    ):
 
         self.violations.pop(
             guild_id,
             None
         )
-
 
 violation_tracker = ViolationTracker()
