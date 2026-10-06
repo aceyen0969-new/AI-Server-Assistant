@@ -10,6 +10,7 @@ from commands import serverstats
 from commands import channels
 from commands import organize
 from commands import aistatus
+from commands import approvaltest
 from ai import assistant
 
 
@@ -59,6 +60,8 @@ async def load_features():
     await assistant.setup(bot)
 
     await aistatus.setup(bot)
+
+    await approvaltest.setup(bot)
 
 
 # =========================================================
