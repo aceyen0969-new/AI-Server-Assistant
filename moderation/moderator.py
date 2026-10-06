@@ -1,4 +1,3 @@
-
 import asyncio
 
 import discord
@@ -56,8 +55,7 @@ class ModerationManager:
         except discord.HTTPException as e:
 
             print(
-                "❌ Warning cleanup: "
-                "Discord error."
+                "❌ Warning cleanup: Discord error."
             )
 
             print(e)
@@ -79,19 +77,33 @@ class ModerationManager:
         message: discord.Message
     ):
 
+        # -------------------------------------------------
+        # IGNORE BOTS
+        # -------------------------------------------------
+
         if message.author.bot:
             return
 
+
+        # -------------------------------------------------
+        # IGNORE DMS
+        # -------------------------------------------------
+
         if message.guild is None:
             return
+
+
+        # -------------------------------------------------
+        # IGNORE EMPTY MESSAGES
+        # -------------------------------------------------
 
         if not message.content.strip():
             return
 
 
-        # =============================================
-        # SPAM DETECTION
-        # =============================================
+        # -------------------------------------------------
+        # CHECK SPAM
+        # -------------------------------------------------
 
         result = self.detector.check_message(
             guild_id=message.guild.id,
@@ -99,13 +111,14 @@ class ModerationManager:
             content=message.content
         )
 
+
         if not result["is_spam"]:
             return
 
 
-        # =============================================
-        # VIOLATION TRACKING
-        # =============================================
+        # -------------------------------------------------
+        # RECORD VIOLATION
+        # -------------------------------------------------
 
         violation_count = (
             violation_tracker.add_violation(
@@ -121,14 +134,13 @@ class ModerationManager:
         print(f"Type: {result['type']}")
         print(f"Reason: {result['reason']}")
         print(
-            f"Violation count: "
-            f"{violation_count}"
+            f"Violation count: {violation_count}"
         )
 
 
-        # =============================================
-        # ESCALATION
-        # =============================================
+        # -------------------------------------------------
+        # DETERMINE ESCALATION
+        # -------------------------------------------------
 
         if violation_count == 1:
 
@@ -148,9 +160,9 @@ class ModerationManager:
         )
 
 
-        # =============================================
+        # =================================================
         # DELETE SPAM
-        # =============================================
+        # =================================================
 
         delete_request = ActionRequest(
             action="delete_spam",
@@ -162,9 +174,7 @@ class ModerationManager:
                 "channel_id": message.channel.id,
                 "message_id": message.id,
                 "spam_type": result["type"],
-                "violation_count": (
-                    violation_count
-                )
+                "violation_count": violation_count
             }
         )
 
@@ -197,9 +207,9 @@ class ModerationManager:
                 )
 
 
-        # =============================================
-        # WARNING
-        # =============================================
+        # =================================================
+        # PUBLIC WARNING
+        # =================================================
 
         if violation_count == 2:
 
@@ -218,8 +228,8 @@ class ModerationManager:
                     await message.channel.send(
                         f"⚠️ {message.author.mention}, "
                         f"please stop spamming.\n\n"
-                        f"This is your "
-                        f"**2nd moderation violation**.\n"
+                        f"This is your **2nd moderation "
+                        f"violation**.\n"
                         f"**Reason:** "
                         f"{result['reason']}"
                     )
@@ -236,6 +246,7 @@ class ModerationManager:
                 )
 
 
+                # Schedule cleanup without blocking
                 asyncio.create_task(
                     self.cleanup_warning(
                         warning_message
@@ -262,8 +273,7 @@ class ModerationManager:
             except discord.HTTPException as e:
 
                 print(
-                    "❌ Warning: "
-                    "DISCORD HTTP ERROR"
+                    "❌ Warning: DISCORD HTTP ERROR"
                 )
 
                 print(
@@ -274,13 +284,11 @@ class ModerationManager:
             except Exception as e:
 
                 print(
-                    "❌ Warning: "
-                    "UNEXPECTED ERROR"
+                    "❌ Warning: UNEXPECTED ERROR"
                 )
 
                 print(
-                    f"Error type: "
-                    f"{type(e).__name__}"
+                    f"Error type: {type(e).__name__}"
                 )
 
                 print(
@@ -288,74 +296,20 @@ class ModerationManager:
                 )
 
 
-        # =============================================
+        # =================================================
         # TIMEOUT
-        # =============================================
+        # =================================================
 
         if violation_count >= 3:
 
-            timeout_request = ActionRequest(
-                action="timeout_member",
-                target_id=message.author.id,
-                target_name=message.author.name,
-                reason=(
-                    "Repeated spam violations. "
-                    f"Violation #{violation_count}."
-                ),
-                data={
-                    "guild_id": message.guild.id,
-                    "channel_id": (
-                        message.channel.id
-                    ),
-                    "duration_seconds": 60,
-                    "violation_count": (
-                        violation_count
-                    )
-                }
+            print(
+                "Timeout: NOT IMPLEMENTED"
             )
 
-
-            if can_execute_automatically(
-                timeout_request
-            ):
-
-                timeout_result = (
-                    await execute_action(
-                        timeout_request,
-                        member=message.author
-                    )
-                )
-
-
-                if timeout_result["success"]:
-
-                    print(
-                        "⏱️ Timeout: SUCCESS"
-                    )
-
-                    print(
-                        "Duration: "
-                        f"{timeout_result['duration_seconds']} "
-                        "seconds"
-                    )
-
-                else:
-
-                    print(
-                        "❌ Timeout: FAILED"
-                    )
-
-                    print(
-                        f"Reason: "
-                        f"{timeout_result['error']}"
-                    )
-
-            else:
-
-                print(
-                    "❌ Timeout: "
-                    "BLOCKED BY SECURITY POLICY"
-                )
+            print(
+                "Timeout decision recorded, "
+                "but no timeout executor exists yet."
+            )
 
 
         print("----------------------------------------")
