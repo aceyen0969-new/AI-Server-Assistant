@@ -105,6 +105,38 @@ IMPORTANT:
   or activity patterns.
 - Use the exact evidence provided in the report.
 
+ACTIONABLE PROPOSALS:
+
+Some proposals may be executable by the Discord bot.
+
+Only create an action object when the proposal describes
+a specific Discord change that the bot could perform.
+
+Currently supported proposal actions are:
+
+1. create_channel
+
+For create_channel, use this structure:
+
+{{
+    "action": "create_channel",
+    "name": "channel-name",
+    "channel_type": "text"
+}}
+
+The channel_type must be either "text" or "voice".
+
+If a proposal is only advice, monitoring, engagement strategy,
+or something that the bot cannot directly execute, set:
+
+"action": null
+
+Do NOT invent channel names based on activity data unless
+the proposal clearly supports the suggested name.
+
+Do NOT create actions for proposals that are not supported
+by the available action types.
+
 Return ONLY valid JSON using this structure:
 
 {{
@@ -120,27 +152,36 @@ Return ONLY valid JSON using this structure:
         {{
             "title": "Proposal title",
             "description": "What the server owner could consider doing.",
-            "reason": "Why the data supports this proposal."
+            "reason": "Why the data supports this proposal.",
+            "action": null
         }}
     ]
 }}
 
-If there are not enough data points to make a useful
-observation or proposal, return an empty list instead.
-
-Example:
+For an actionable proposal:
 
 {{
-    "summary": "The server has limited activity during the reporting period.",
-    "observations": [
-        {{
-            "title": "Insufficient data for a trend",
-            "description": "Only a small number of activity records are available.",
-            "evidence": "The daily activity dataset contains too few days to establish a reliable trend."
-        }}
-    ],
-    "proposals": []
+    "title": "Create a gaming channel",
+    "description": "Create a dedicated channel for gaming discussions.",
+    "reason": "The server would benefit from a dedicated space for this activity.",
+    "action": {{
+        "action": "create_channel",
+        "name": "gaming",
+        "channel_type": "text"
+    }}
 }}
+
+For a non-actionable proposal:
+
+{{
+    "title": "Collect more activity data",
+    "description": "Continue monitoring activity before drawing conclusions.",
+    "reason": "There is not enough data to establish a reliable trend.",
+    "action": null
+}}
+
+If there are not enough data points to make a useful
+observation or proposal, return an empty list instead.
 """
 
 
