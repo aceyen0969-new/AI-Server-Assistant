@@ -13,6 +13,7 @@ from commands import organize
 from commands import aistatus
 from commands import approvaltest
 from commands import cleanup
+from commands import analytics
 
 from moderation.moderator import moderation_manager
 
@@ -65,6 +66,8 @@ async def load_features():
     await approvaltest.setup(bot)
 
     await cleanup.setup(bot)
+
+    await analytics.setup(bot)
 
 
 @bot.event

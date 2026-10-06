@@ -363,3 +363,46 @@ def get_hourly_activity(
 
     finally:
         connection.close()
+
+def get_daily_activity(
+    guild_id: int,
+    days: int = 7,
+):
+    """Return message counts grouped by UTC date."""
+
+    connection = get_connection()
+
+    try:
+
+        start_time = get_start_time(
+            days
+        )
+
+        rows = connection.execute(
+            """
+            SELECT
+                substr(created_at, 1, 10) AS date,
+                COUNT(*) AS message_count
+            FROM message_activity
+            WHERE guild_id = ?
+            AND created_at >= ?
+            GROUP BY date
+            ORDER BY date
+            """,
+            (
+                guild_id,
+                start_time,
+            ),
+        ).fetchall()
+
+        return [
+            {
+                "date": row["date"],
+                "message_count": row["message_count"],
+            }
+            for row in rows
+        ]
+
+    finally:
+
+        connection.close()

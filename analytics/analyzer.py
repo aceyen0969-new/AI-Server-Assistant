@@ -40,11 +40,52 @@ SERVER ACTIVITY REPORT:
 Analyze:
 
 1. Overall server activity.
-2. Which channels are most or least active.
-3. Member participation.
-4. Activity patterns by hour.
-5. Potential organizational improvements.
-6. Potential issues that the server owner may want to investigate.
+2. Daily activity trends.
+3. Which days are busiest and quietest.
+4. Which channels are most or least active.
+5. Member participation.
+6. Activity patterns by hour.
+7. Calculated server metrics.
+8. Potential organizational improvements.
+9. Potential issues that the server owner may want to investigate.
+
+CALCULATED METRICS:
+
+The Python analytics system has already calculated
+objective metrics from the raw activity data.
+
+Use these metrics as factual evidence:
+
+- average_messages_per_member
+- busiest_channel
+- busiest_hour
+- busiest_day
+- daily_trend
+
+Do not recalculate these values yourself unless necessary
+to explain them.
+
+DAILY ACTIVITY ANALYSIS:
+
+Use the daily_activity data together with the
+daily_trend metric.
+
+Interpret the trend carefully:
+
+- "insufficient_data" means there is not enough data
+  to determine a meaningful trend.
+- "increasing" means the available daily data shows
+  activity increasing from the earliest recorded day
+  to the latest recorded day.
+- "decreasing" means the available daily data shows
+  activity decreasing from the earliest recorded day
+  to the latest recorded day.
+- "stable" means the earliest and latest recorded
+  activity levels are equal.
+
+Do not claim that a trend is a long-term server-wide
+pattern unless the reporting period contains enough
+activity data to support that conclusion.
 
 IMPORTANT:
 
@@ -56,10 +97,13 @@ IMPORTANT:
 - Clearly distinguish observations from recommendations.
 - Recommendations are suggestions only.
 - Never perform an action yourself.
-- Remember that a small amount of data may not be enough
-  to make a strong conclusion.
+- A small amount of data may not be enough to make a
+  strong conclusion.
 - Avoid presenting temporary activity as a long-term trend.
 - State when more data is needed.
+- Do not invent dates, message counts, users, channels,
+  or activity patterns.
+- Use the exact evidence provided in the report.
 
 Return ONLY valid JSON using this structure:
 
@@ -87,12 +131,12 @@ observation or proposal, return an empty list instead.
 Example:
 
 {{
-    "summary": "The server has moderate activity concentrated in a small number of channels.",
+    "summary": "The server has limited activity during the reporting period.",
     "observations": [
         {{
-            "title": "Activity is concentrated",
-            "description": "Most recorded messages come from one channel.",
-            "evidence": "The channel accounts for most recorded messages."
+            "title": "Insufficient data for a trend",
+            "description": "Only a small number of activity records are available.",
+            "evidence": "The daily activity dataset contains too few days to establish a reliable trend."
         }}
     ],
     "proposals": []
