@@ -21,6 +21,7 @@ from ai import assistant
 
 from analytics import observer
 from analytics.database import initialize_database
+from analytics.scheduler import analytics_scheduler
 
 
 load_dotenv()
@@ -45,6 +46,9 @@ bot = commands.Bot(
     command_prefix="!",
     intents=intents
 )
+
+
+scheduler_task = None
 
 
 async def load_features():
@@ -73,6 +77,8 @@ async def load_features():
 @bot.event
 async def on_ready():
 
+    global scheduler_task
+
     print("----------------------------------------")
 
     print(
@@ -98,6 +104,16 @@ async def on_ready():
         print("Command sync error:")
 
         print(e)
+
+    if scheduler_task is None or scheduler_task.done():
+
+        print(
+            "ANALYTICS SCHEDULER: Starting..."
+        )
+
+        scheduler_task = asyncio.create_task(
+            analytics_scheduler(bot)
+        )
 
 
 @bot.event
@@ -128,9 +144,25 @@ async def main():
 
         await load_features()
 
-        await bot.start(
-            DISCORD_TOKEN
-        )
+        try:
+
+            await bot.start(
+                DISCORD_TOKEN
+            )
+
+        finally:
+
+            if scheduler_task is not None:
+
+                scheduler_task.cancel()
+
+                try:
+
+                    await scheduler_task
+
+                except asyncio.CancelledError:
+
+                    pass
 
 
 print(
