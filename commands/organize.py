@@ -1,25 +1,21 @@
-import json
 import uuid
 
 import discord
+from discord import app_commands
 
-from ai.providers import (
-    ask_gemini,
-    ask_openrouter_json,
-    ask_groq_json
-)
+from ai.action_planner import plan_actions
 
 from security.actions import (
     ActionRequest,
-    evaluate_action
+    evaluate_action,
 )
 
 from security.approval import (
-    create_approval_request
+    create_approval_request,
 )
 
 from security.approval_view import (
-    ApprovalView
+    ApprovalView,
 )
 
 
@@ -27,9 +23,15 @@ async def setup(bot):
 
     @bot.tree.command(
         name="organize",
-        description="Ask the AI to suggest safe server organization changes."
+        description="Ask the AI to suggest a server organization change.",
     )
-    async def organize(interaction: discord.Interaction):
+    @app_commands.describe(
+        request="Describe the server organization change you want."
+    )
+    async def organize(
+        interaction: discord.Interaction,
+        request: str,
+    ):
 
         await interaction.response.defer()
 
@@ -37,237 +39,159 @@ async def setup(bot):
 
         if guild is None:
             await interaction.followup.send(
-                "❌ This command can only be used inside a server."
+                "This command can only be used inside a server."
             )
             return
 
-        categories = []
+        # -------------------------------------------------
+        # AI ACTION PLANNER
+        # -------------------------------------------------
 
-        for category in guild.categories:
-            categories.append({
-                "id": category.id,
-                "name": category.name
-            })
+        planned = await plan_actions(
+            guild,
+            request,
+        )
 
-        channels = []
+        actions = planned.get(
+            "actions",
+            []
+        )
 
-        for channel in guild.channels:
-            if isinstance(
-                channel,
-                (
-                    discord.TextChannel,
-                    discord.VoiceChannel,
-                    discord.StageChannel,
-                    discord.ForumChannel
-                )
-            ):
-                channels.append({
-                    "id": channel.id,
-                    "name": channel.name,
-                    "type": str(channel.type),
-                    "category_id": (
-                        channel.category.id
-                        if channel.category
-                        else None
-                    ),
-                    "category_name": (
-                        channel.category.name
-                        if channel.category
-                        else "No Category"
-                    )
-                })
-
-        server_context = {
-            "server_name": guild.name,
-            "categories": categories,
-            "channels": channels
-        }
-
-        prompt = f"""
-You are organizing a Discord server.
-
-SERVER INFORMATION:
-{json.dumps(server_context, indent=2)}
-
-Your job is to identify channels that appear to be in
-the wrong category.
-
-Return ONLY a JSON object using exactly this structure:
-
-{{
-    "changes": [
-        {{
-            "channel_id": 123456789,
-            "channel_name": "gaming",
-            "current_category_id": 111111111,
-            "current_category_name": "Voice Channels",
-            "new_category_id": 222222222,
-            "new_category_name": "Text Channels",
-            "reason": "The channel is a text channel but is currently under a voice category."
-        }}
-    ]
-}}
-
-Rules:
-
-- Only suggest changes that are clearly useful.
-- Use the REAL channel and category IDs supplied above.
-- Never invent IDs.
-- Do not create categories.
-- Do not delete channels.
-- Do not rename channels.
-- Do not modify permissions.
-- If no changes are needed, return:
-{{"changes": []}}
-"""
-
-        providers = [
-            ("Gemini", ask_gemini),
-            ("OpenRouter", ask_openrouter_json),
-            ("Groq", ask_groq_json)
-        ]
-
-        result = None
-        provider_used = None
-        errors = []
-
-        for provider_name, provider_function in providers:
-            try:
-                print("----------------------------------------")
-                print(f"🤖 Organize trying {provider_name}...")
-
-                raw_response = await provider_function(prompt)
-
-                result = json.loads(raw_response)
-                provider_used = provider_name
-
-                print(
-                    f"✅ Organize response from {provider_name}"
-                )
-
-                break
-
-            except Exception as e:
-                error_text = str(e)
-                errors.append(
-                    f"{provider_name}: {error_text}"
-                )
-
-                print(
-                    f"❌ Organize {provider_name} failed:"
-                )
-                print(error_text)
-
-        if result is None:
+        if not actions:
             await interaction.followup.send(
-                "❌ The AI organization planner failed.\n\n"
-                + "\n".join(errors)
+                "I couldn't turn that request into a valid "
+                "server organization action."
             )
             return
 
-        changes = result.get("changes", [])
+        # -------------------------------------------------
+        # CREATE APPROVAL REQUESTS
+        # -------------------------------------------------
 
-        if not changes:
-            await interaction.followup.send(
-                "✅ The AI found no obvious channel organization changes."
+        created = 0
+
+        for action in actions:
+
+            action_type = action.get(
+                "action"
             )
-            return
 
-        approved_requests = []
+            if action_type != "move_channel":
+                continue
 
-        for change in changes:
+            channel_id = action.get(
+                "channel_id"
+            )
 
-            channel_id = change.get("channel_id")
-            new_category_id = change.get("new_category_id")
+            category_id = action.get(
+                "category_id"
+            )
 
-            channel = guild.get_channel(channel_id)
-            new_category = guild.get_channel(new_category_id)
+            channel = guild.get_channel(
+                channel_id
+            )
+
+            category = guild.get_channel(
+                category_id
+            )
 
             if channel is None:
                 continue
 
+            if category is None:
+                continue
+
             if not isinstance(
-                new_category,
-                discord.CategoryChannel
+                category,
+                discord.CategoryChannel,
             ):
                 continue
+
+            # -------------------------------------------------
+            # SECURITY ACTION REQUEST
+            # -------------------------------------------------
 
             action_request = ActionRequest(
                 action="move_channel",
                 target_id=channel.id,
                 target_name=channel.name,
-                reason=change.get(
-                    "reason",
-                    "AI suggested reorganizing this channel."
-                ),
+                reason=request,
                 data={
-                    "new_category_id": new_category.id,
-                    "new_category_name": new_category.name
-                }
+                    "channel_id": channel.id,
+                    "category_id": category.id,
+                },
             )
 
             decision = evaluate_action(
                 action_request
             )
 
+            # -------------------------------------------------
+            # FAIL CLOSED
+            # -------------------------------------------------
+
+            if not decision["allowed"] and not decision[
+                "requires_approval"
+            ]:
+                continue
+
             if not decision["requires_approval"]:
                 continue
 
-            request_id = str(uuid.uuid4())
+            # -------------------------------------------------
+            # CREATE APPROVAL
+            # -------------------------------------------------
+
+            request_id = str(
+                uuid.uuid4()
+            )
 
             create_approval_request(
                 request_id=request_id,
-                action=action_request.action,
-                target_id=action_request.target_id,
-                target_name=action_request.target_name,
-                reason=action_request.reason,
-                data=action_request.data
+                action="move_channel",
+                target_id=channel.id,
+                target_name=channel.name,
+                reason=request,
+                data={
+                    "channel_id": channel.id,
+                    "category_id": category.id,
+                },
             )
-
-            approved_requests.append(
-                (
-                    request_id,
-                    action_request,
-                    new_category
-                )
-            )
-
-        if not approved_requests:
-            await interaction.followup.send(
-                "⚠️ The AI returned changes, but none passed "
-                "the safety validation."
-            )
-            return
-
-        for (
-            request_id,
-            action_request,
-            new_category
-        ) in approved_requests:
 
             embed = discord.Embed(
-                title="🛡️ AI Organization Request",
+                title="AI Organization Request",
                 description=(
                     f"**Action:** `move_channel`\n"
-                    f"**Channel:** {action_request.target_name}\n"
-                    f"**New Category:** {new_category.name}\n"
-                    f"**Reason:** {action_request.reason}\n\n"
-                    "⚠️ This change requires server-owner approval."
+                    f"**Channel:** {channel.mention}\n"
+                    f"**New Category:** `{category.name}`\n"
+                    f"**Request:** {request}\n\n"
+                    "This change requires server-owner approval."
                 ),
-                color=discord.Color.orange()
+                color=discord.Color.orange(),
             )
 
             embed.set_footer(
-                text=f"AI Provider: {provider_used}"
+                text="AI Server Assistant"
             )
 
             view = ApprovalView(
                 request_id=request_id,
                 allowed_user_id=guild.owner_id,
-                guild=guild
+                guild=guild,
             )
 
             await interaction.followup.send(
                 embed=embed,
-                view=view
+                view=view,
+            )
+
+            created += 1
+
+        # -------------------------------------------------
+        # NO VALID APPROVALS
+        # -------------------------------------------------
+
+        if created == 0:
+            await interaction.followup.send(
+                "No valid organization actions were created."
             )
