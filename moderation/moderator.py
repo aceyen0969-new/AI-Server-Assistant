@@ -1,36 +1,109 @@
+import asyncio
+
 import discord
 
 from moderation.detector import SpamDetector
+from moderation.violations import violation_tracker
+
 from security.actions import (
     ActionRequest,
-    can_execute_automatically
+    can_execute_automatically,
+    execute_action
 )
 
 
 class ModerationManager:
 
     def __init__(self):
+
         self.detector = SpamDetector(
             max_messages=5,
             time_window=5,
             duplicate_limit=3
         )
 
+
+    async def cleanup_warning(
+        self,
+        warning_message: discord.Message
+    ):
+
+        await asyncio.sleep(10)
+
+        try:
+
+            await warning_message.delete()
+
+            print(
+                "🧹 Warning cleanup: SUCCESS"
+            )
+
+        except discord.NotFound:
+
+            print(
+                "🧹 Warning cleanup: "
+                "already deleted."
+            )
+
+        except discord.Forbidden:
+
+            print(
+                "❌ Warning cleanup: "
+                "missing permission."
+            )
+
+        except discord.HTTPException as e:
+
+            print(
+                "❌ Warning cleanup: Discord error."
+            )
+
+            print(e)
+
+        except Exception as e:
+
+            print(
+                "❌ Warning cleanup: "
+                "unexpected error."
+            )
+
+            print(
+                f"Error: {type(e).__name__}: {e}"
+            )
+
+
     async def handle_message(
         self,
         message: discord.Message
     ):
-        # Ignore bots.
+
+        # -------------------------------------------------
+        # IGNORE BOTS
+        # -------------------------------------------------
+
         if message.author.bot:
             return
 
-        # Ignore DMs.
+
+        # -------------------------------------------------
+        # IGNORE DMS
+        # -------------------------------------------------
+
         if message.guild is None:
             return
 
-        # Ignore empty messages.
+
+        # -------------------------------------------------
+        # IGNORE EMPTY MESSAGES
+        # -------------------------------------------------
+
         if not message.content.strip():
             return
+
+
+        # -------------------------------------------------
+        # CHECK SPAM
+        # -------------------------------------------------
 
         result = self.detector.check_message(
             guild_id=message.guild.id,
@@ -38,10 +111,60 @@ class ModerationManager:
             content=message.content
         )
 
+
         if not result["is_spam"]:
             return
 
-        action_request = ActionRequest(
+
+        # -------------------------------------------------
+        # RECORD VIOLATION
+        # -------------------------------------------------
+
+        violation_count = (
+            violation_tracker.add_violation(
+                guild_id=message.guild.id,
+                user_id=message.author.id
+            )
+        )
+
+
+        print("----------------------------------------")
+        print("🛡️ AI Moderation")
+        print(f"User: {message.author}")
+        print(f"Type: {result['type']}")
+        print(f"Reason: {result['reason']}")
+        print(
+            f"Violation count: {violation_count}"
+        )
+
+
+        # -------------------------------------------------
+        # DETERMINE ESCALATION
+        # -------------------------------------------------
+
+        if violation_count == 1:
+
+            escalation = "delete"
+
+        elif violation_count == 2:
+
+            escalation = "warn"
+
+        else:
+
+            escalation = "timeout"
+
+
+        print(
+            f"Escalation: {escalation}"
+        )
+
+
+        # =================================================
+        # DELETE SPAM
+        # =================================================
+
+        delete_request = ActionRequest(
             action="delete_spam",
             target_id=message.id,
             target_name=message.author.name,
@@ -50,47 +173,146 @@ class ModerationManager:
                 "guild_id": message.guild.id,
                 "channel_id": message.channel.id,
                 "message_id": message.id,
-                "spam_type": result["type"]
+                "spam_type": result["type"],
+                "violation_count": violation_count
             }
         )
 
-        if not can_execute_automatically(
-            action_request
+
+        if can_execute_automatically(
+            delete_request
         ):
-            print(
-                "⚠️ Spam detected, but the action "
-                "was not allowed automatically."
-            )
-            return
 
-        try:
-            await message.delete()
-
-            print("----------------------------------------")
-            print("🛡️ AI Moderation")
-            print(f"User: {message.author}")
-            print(f"Action: delete_spam")
-            print(f"Type: {result['type']}")
-            print(f"Reason: {result['reason']}")
-            print("Result: SUCCESS")
-            print("----------------------------------------")
-
-        except discord.NotFound:
-            print(
-                "⚠️ Spam message was already deleted."
+            delete_result = await execute_action(
+                delete_request,
+                message=message
             )
 
-        except discord.Forbidden:
+
+            if delete_result["success"]:
+
+                print(
+                    "Delete: SUCCESS"
+                )
+
+            else:
+
+                print(
+                    "Delete: FAILED"
+                )
+
+                print(
+                    f"Reason: "
+                    f"{delete_result['error']}"
+                )
+
+
+        # =================================================
+        # PUBLIC WARNING
+        # =================================================
+
+        if violation_count == 2:
+
             print(
-                "❌ Quasar does not have permission "
-                "to delete this message."
+                "⚠️ Entering warning system..."
             )
 
-        except discord.HTTPException as e:
+            try:
+
+                print(
+                    "📨 Attempting to send "
+                    "warning message..."
+                )
+
+                warning_message = (
+                    await message.channel.send(
+                        f"⚠️ {message.author.mention}, "
+                        f"please stop spamming.\n\n"
+                        f"This is your **2nd moderation "
+                        f"violation**.\n"
+                        f"**Reason:** "
+                        f"{result['reason']}"
+                    )
+                )
+
+
+                print(
+                    "✅ Warning: SUCCESS"
+                )
+
+                print(
+                    f"Warning message ID: "
+                    f"{warning_message.id}"
+                )
+
+
+                # Schedule cleanup without blocking
+                asyncio.create_task(
+                    self.cleanup_warning(
+                        warning_message
+                    )
+                )
+
+
+                print(
+                    "🧹 Warning cleanup scheduled."
+                )
+
+
+            except discord.Forbidden as e:
+
+                print(
+                    "❌ Warning: FORBIDDEN"
+                )
+
+                print(
+                    f"Error: {e}"
+                )
+
+
+            except discord.HTTPException as e:
+
+                print(
+                    "❌ Warning: DISCORD HTTP ERROR"
+                )
+
+                print(
+                    f"Error: {e}"
+                )
+
+
+            except Exception as e:
+
+                print(
+                    "❌ Warning: UNEXPECTED ERROR"
+                )
+
+                print(
+                    f"Error type: {type(e).__name__}"
+                )
+
+                print(
+                    f"Error: {e}"
+                )
+
+
+        # =================================================
+        # TIMEOUT
+        # =================================================
+
+        if violation_count >= 3:
+
             print(
-                "❌ Discord rejected the message deletion."
+                "Timeout: NOT IMPLEMENTED"
             )
-            print(e)
+
+            print(
+                "Timeout decision recorded, "
+                "but no timeout executor exists yet."
+            )
+
+
+        print("----------------------------------------")
 
 
 moderation_manager = ModerationManager()
