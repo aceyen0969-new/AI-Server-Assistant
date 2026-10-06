@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from google import genai
 from openai import OpenAI
 from groq import Groq
+from anthropic import Anthropic
 
 
 load_dotenv()
@@ -17,6 +18,7 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 
 # =========================================================
@@ -26,6 +28,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 gemini_client = None
 openrouter_client = None
 groq_client = None
+anthropic_client = None
 
 
 if GEMINI_API_KEY:
@@ -47,11 +50,19 @@ if GROQ_API_KEY:
     )
 
 
+if ANTHROPIC_API_KEY:
+    anthropic_client = Anthropic(
+        api_key=ANTHROPIC_API_KEY
+    )
+
+
 # =========================================================
 # MODELS
 # =========================================================
 
 GEMINI_MODEL = "gemini-3.8-flash"
+
+CLAUDE_MODEL = "claude-sonnet-4-5"
 
 OPENROUTER_MODEL = "openrouter/free"
 
@@ -84,6 +95,66 @@ async def ask_gemini(prompt):
 
 
 # =========================================================
+# CLAUDE
+# =========================================================
+
+async def ask_claude(prompt):
+
+    if anthropic_client is None:
+        raise RuntimeError(
+            "Anthropic API key is not configured."
+        )
+
+    response = await asyncio.to_thread(
+        anthropic_client.messages.create,
+        model=CLAUDE_MODEL,
+        max_tokens=2048,
+        system=(
+            "You are the AI Server Assistant inside a Discord server.\n\n"
+            "Answer the user's request directly and naturally.\n"
+            "Use the server information supplied in the prompt.\n"
+            "Do not claim to have performed Discord actions.\n"
+            "Do not output internal analysis or safety classifications.\n"
+            "Do not greet the user unless they greeted you.\n"
+            "Keep responses reasonably concise.\n"
+            "Use Markdown when useful."
+        ),
+        messages=[
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    )
+
+    if not response.content:
+        raise RuntimeError(
+            "Claude returned an empty response."
+        )
+
+    text_parts = []
+
+    for block in response.content:
+
+        if hasattr(block, "text"):
+
+            text_parts.append(
+                block.text
+            )
+
+    answer = "\n".join(
+        text_parts
+    ).strip()
+
+    if not answer:
+        raise RuntimeError(
+            "Claude returned an empty response."
+        )
+
+    return answer
+
+
+# =========================================================
 # OPENROUTER NORMAL CHAT
 # =========================================================
 
@@ -111,7 +182,6 @@ IMPORTANT BEHAVIOR:
 - Answer the user's actual question.
 - Do NOT greet the user unless they greeted you.
 - Do NOT introduce yourself.
-- Do NOT say "Welcome to the server".
 - Do NOT describe what you can do.
 - Do NOT give a generic list of possible services.
 - Do NOT repeat the user's question.
@@ -182,7 +252,6 @@ Do not return:
 - Explanations outside JSON
 - Greetings
 - Safety classifications
-- "User Safety: safe"
 - Analysis
 
 Follow the exact JSON structure requested by the user.

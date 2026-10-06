@@ -1,8 +1,10 @@
+
 import re
 import time
 
 from ai.providers import (
     ask_gemini,
+    ask_claude,
     ask_openrouter,
     ask_groq
 )
@@ -20,6 +22,7 @@ from ai.health import (
 
 PROVIDERS = [
     ("Gemini", ask_gemini),
+    ("Claude", ask_claude),
     ("OpenRouter", ask_openrouter),
     ("Groq", ask_groq)
 ]
@@ -159,17 +162,6 @@ async def ask_ai(prompt, history=None):
             print("----------------------------------------")
 
         else:
-
-            print("----------------------------------------")
-            print(
-                "🔄 Gemini quota should have reset."
-            )
-
-            print(
-                "Trying Gemini again..."
-            )
-
-            print("----------------------------------------")
 
             gemini_quota_reset_time = 0
 

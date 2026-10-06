@@ -6,7 +6,14 @@ import time
 # =========================================================
 
 providers = {
+
     "Gemini": {
+        "status": "unknown",
+        "available": False,
+        "retry_at": 0
+    },
+
+    "Claude": {
         "status": "unknown",
         "available": False,
         "retry_at": 0
@@ -36,7 +43,9 @@ def mark_success(provider_name):
         return
 
     providers[provider_name]["status"] = "online"
+
     providers[provider_name]["available"] = True
+
     providers[provider_name]["retry_at"] = 0
 
 
@@ -53,14 +62,18 @@ def mark_failure(
         return
 
     providers[provider_name]["status"] = "offline"
+
     providers[provider_name]["available"] = False
 
+
     if retry_seconds:
+
         providers[provider_name]["retry_at"] = (
             time.time() + retry_seconds
         )
 
     else:
+
         providers[provider_name]["retry_at"] = 0
 
 
@@ -79,11 +92,17 @@ def is_available(provider_name):
     # -----------------------------------------------------
     # UNKNOWN
     # -----------------------------------------------------
-    # We have not tested this provider yet.
-    # Therefore, allow manager.py to try it.
+    # The provider has not been tested yet.
+    #
+    # UNKNOWN means:
+    #
+    # "We don't know if it works."
+    #
+    # Therefore, allow the manager to try it.
     # -----------------------------------------------------
 
     if provider["status"] == "unknown":
+
         return True
 
 
@@ -93,18 +112,29 @@ def is_available(provider_name):
 
     retry_at = provider["retry_at"]
 
+
     if retry_at > 0:
+
+        # -------------------------------------------------
+        # RETRY TIME HAS EXPIRED
+        # -------------------------------------------------
 
         if time.time() >= retry_at:
 
-            # Retry period has ended.
-            # Allow the provider to be tested again.
-
             provider["status"] = "unknown"
+
             provider["available"] = False
+
             provider["retry_at"] = 0
 
+            # Allow the provider to be tested again.
+
             return True
+
+
+        # -------------------------------------------------
+        # STILL WAITING
+        # -------------------------------------------------
 
         return False
 
@@ -126,14 +156,20 @@ def any_provider_available():
 
         provider = providers[provider_name]
 
-        # Only ONLINE providers count as available.
-        # UNKNOWN providers can be tested, but do not
-        # make the overall AI status appear online.
+
+        # -------------------------------------------------
+        # ONLY ONLINE PROVIDERS COUNT
+        # -------------------------------------------------
+        # UNKNOWN providers can be tested, but they should
+        # NOT make the overall AI status appear online.
+        # -------------------------------------------------
 
         if provider["status"] == "online":
 
             if is_available(provider_name):
+
                 return True
+
 
     return False
 
@@ -146,11 +182,15 @@ def get_status():
 
     result = {}
 
+
     for provider_name in providers:
 
         provider = providers[provider_name]
 
-        # Update expired retry timers.
+
+        # -------------------------------------------------
+        # CHECK EXPIRED RETRY TIMER
+        # -------------------------------------------------
 
         if (
             provider["retry_at"] > 0
@@ -158,14 +198,24 @@ def get_status():
         ):
 
             provider["status"] = "unknown"
+
             provider["available"] = False
+
             provider["retry_at"] = 0
 
 
+        # -------------------------------------------------
+        # SAVE STATUS
+        # -------------------------------------------------
+
         result[provider_name] = {
+
             "available": provider["available"],
+
             "status": provider["status"]
+
         }
+
 
     return result
 
@@ -179,5 +229,6 @@ def get_ai_status():
     if any_provider_available():
 
         return "online"
+
 
     return "offline"
