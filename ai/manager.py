@@ -1,4 +1,4 @@
-
+import asyncio
 import re
 import time
 
@@ -26,6 +26,18 @@ PROVIDERS = [
     ("OpenRouter", ask_openrouter),
     ("Groq", ask_groq)
 ]
+
+
+# =========================================================
+# PROVIDER TIMEOUTS
+# =========================================================
+
+PROVIDER_TIMEOUTS = {
+    "Gemini": 5,
+    "Claude": 5,
+    "OpenRouter": 8,
+    "Groq": 10
+}
 
 
 # =========================================================
@@ -98,7 +110,6 @@ such as "it", "that", "those", "the channels", "the role",
 
 The previous conversation may have been answered by
 a different AI provider.
-
 Continue the conversation naturally as if you have been
 the same assistant throughout.
 """
@@ -181,7 +192,6 @@ async def ask_ai(prompt, history=None):
         if not is_available(provider_name):
 
             print("----------------------------------------")
-
             print(
                 f"⏭️ Skipping {provider_name} "
                 f"because it is unavailable."
@@ -193,9 +203,22 @@ async def ask_ai(prompt, history=None):
 
 
         print("----------------------------------------")
-
         print(
             f"🤖 Trying {provider_name}..."
+        )
+
+
+        # -------------------------------------------------
+        # GET PROVIDER TIMEOUT
+        # -------------------------------------------------
+
+        timeout = PROVIDER_TIMEOUTS.get(
+            provider_name,
+            5
+        )
+
+        print(
+            f"⏱️ Timeout: {timeout} seconds"
         )
 
 
@@ -205,8 +228,9 @@ async def ask_ai(prompt, history=None):
 
         try:
 
-            answer = await provider_function(
-                full_prompt
+            answer = await asyncio.wait_for(
+                provider_function(full_prompt),
+                timeout=timeout
             )
 
 
@@ -226,7 +250,6 @@ async def ask_ai(prompt, history=None):
                 provider_name
             )
 
-
             print(
                 f"✅ {provider_name} "
                 f"responded successfully."
@@ -239,6 +262,35 @@ async def ask_ai(prompt, history=None):
                 "answer": answer,
                 "provider": provider_name
             }
+
+
+        # -------------------------------------------------
+        # TIMEOUT
+        # -------------------------------------------------
+
+        except asyncio.TimeoutError:
+
+            error_text = (
+                f"{provider_name} timed out "
+                f"after {timeout} seconds."
+            )
+
+            errors.append(
+                error_text
+            )
+
+            print(
+                f"⏱️ {error_text}"
+            )
+
+            mark_failure(
+                provider_name,
+                30
+            )
+
+            print(
+                "➡️ Trying next provider..."
+            )
 
 
         # -------------------------------------------------
