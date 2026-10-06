@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 
 
 DATABASE_PATH = Path("analytics") / "analytics.db"
@@ -41,6 +42,22 @@ def initialize_database():
         connection.close()
 
 
+def get_start_time(
+    days: int,
+):
+    """Return the UTC timestamp for the beginning of a time window."""
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    start = now - timedelta(
+        days=days
+    )
+
+    return start.isoformat()
+
+
 def record_message(
     guild_id: int,
     channel_id: int,
@@ -78,20 +95,43 @@ def record_message(
 
 def get_message_count(
     guild_id: int,
+    days: int | None = None,
 ):
-    """Return the total number of recorded messages for a server."""
+    """Return the number of messages in a time window."""
 
     connection = get_connection()
 
     try:
-        result = connection.execute(
-            """
-            SELECT COUNT(*) AS count
-            FROM message_activity
-            WHERE guild_id = ?
-            """,
-            (guild_id,),
-        ).fetchone()
+
+        if days is None:
+
+            result = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM message_activity
+                WHERE guild_id = ?
+                """,
+                (guild_id,),
+            ).fetchone()
+
+        else:
+
+            start_time = get_start_time(
+                days
+            )
+
+            result = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM message_activity
+                WHERE guild_id = ?
+                AND created_at >= ?
+                """,
+                (
+                    guild_id,
+                    start_time,
+                ),
+            ).fetchone()
 
         return result["count"]
 
@@ -101,20 +141,43 @@ def get_message_count(
 
 def get_unique_member_count(
     guild_id: int,
+    days: int | None = None,
 ):
-    """Return the number of unique members who sent messages."""
+    """Return unique active members in a time window."""
 
     connection = get_connection()
 
     try:
-        result = connection.execute(
-            """
-            SELECT COUNT(DISTINCT user_id) AS count
-            FROM message_activity
-            WHERE guild_id = ?
-            """,
-            (guild_id,),
-        ).fetchone()
+
+        if days is None:
+
+            result = connection.execute(
+                """
+                SELECT COUNT(DISTINCT user_id) AS count
+                FROM message_activity
+                WHERE guild_id = ?
+                """,
+                (guild_id,),
+            ).fetchone()
+
+        else:
+
+            start_time = get_start_time(
+                days
+            )
+
+            result = connection.execute(
+                """
+                SELECT COUNT(DISTINCT user_id) AS count
+                FROM message_activity
+                WHERE guild_id = ?
+                AND created_at >= ?
+                """,
+                (
+                    guild_id,
+                    start_time,
+                ),
+            ).fetchone()
 
         return result["count"]
 
@@ -124,24 +187,51 @@ def get_unique_member_count(
 
 def get_channel_activity(
     guild_id: int,
+    days: int | None = None,
 ):
     """Return message counts grouped by channel."""
 
     connection = get_connection()
 
     try:
-        rows = connection.execute(
-            """
-            SELECT
-                channel_id,
-                COUNT(*) AS message_count
-            FROM message_activity
-            WHERE guild_id = ?
-            GROUP BY channel_id
-            ORDER BY message_count DESC
-            """,
-            (guild_id,),
-        ).fetchall()
+
+        if days is None:
+
+            rows = connection.execute(
+                """
+                SELECT
+                    channel_id,
+                    COUNT(*) AS message_count
+                FROM message_activity
+                WHERE guild_id = ?
+                GROUP BY channel_id
+                ORDER BY message_count DESC
+                """,
+                (guild_id,),
+            ).fetchall()
+
+        else:
+
+            start_time = get_start_time(
+                days
+            )
+
+            rows = connection.execute(
+                """
+                SELECT
+                    channel_id,
+                    COUNT(*) AS message_count
+                FROM message_activity
+                WHERE guild_id = ?
+                AND created_at >= ?
+                GROUP BY channel_id
+                ORDER BY message_count DESC
+                """,
+                (
+                    guild_id,
+                    start_time,
+                ),
+            ).fetchall()
 
         return [
             {
@@ -157,24 +247,51 @@ def get_channel_activity(
 
 def get_member_activity(
     guild_id: int,
+    days: int | None = None,
 ):
     """Return message counts grouped by member."""
 
     connection = get_connection()
 
     try:
-        rows = connection.execute(
-            """
-            SELECT
-                user_id,
-                COUNT(*) AS message_count
-            FROM message_activity
-            WHERE guild_id = ?
-            GROUP BY user_id
-            ORDER BY message_count DESC
-            """,
-            (guild_id,),
-        ).fetchall()
+
+        if days is None:
+
+            rows = connection.execute(
+                """
+                SELECT
+                    user_id,
+                    COUNT(*) AS message_count
+                FROM message_activity
+                WHERE guild_id = ?
+                GROUP BY user_id
+                ORDER BY message_count DESC
+                """,
+                (guild_id,),
+            ).fetchall()
+
+        else:
+
+            start_time = get_start_time(
+                days
+            )
+
+            rows = connection.execute(
+                """
+                SELECT
+                    user_id,
+                    COUNT(*) AS message_count
+                FROM message_activity
+                WHERE guild_id = ?
+                AND created_at >= ?
+                GROUP BY user_id
+                ORDER BY message_count DESC
+                """,
+                (
+                    guild_id,
+                    start_time,
+                ),
+            ).fetchall()
 
         return [
             {
@@ -190,24 +307,51 @@ def get_member_activity(
 
 def get_hourly_activity(
     guild_id: int,
+    days: int | None = None,
 ):
     """Return message counts grouped by UTC hour."""
 
     connection = get_connection()
 
     try:
-        rows = connection.execute(
-            """
-            SELECT
-                substr(created_at, 12, 2) AS hour,
-                COUNT(*) AS message_count
-            FROM message_activity
-            WHERE guild_id = ?
-            GROUP BY hour
-            ORDER BY hour
-            """,
-            (guild_id,),
-        ).fetchall()
+
+        if days is None:
+
+            rows = connection.execute(
+                """
+                SELECT
+                    substr(created_at, 12, 2) AS hour,
+                    COUNT(*) AS message_count
+                FROM message_activity
+                WHERE guild_id = ?
+                GROUP BY hour
+                ORDER BY hour
+                """,
+                (guild_id,),
+            ).fetchall()
+
+        else:
+
+            start_time = get_start_time(
+                days
+            )
+
+            rows = connection.execute(
+                """
+                SELECT
+                    substr(created_at, 12, 2) AS hour,
+                    COUNT(*) AS message_count
+                FROM message_activity
+                WHERE guild_id = ?
+                AND created_at >= ?
+                GROUP BY hour
+                ORDER BY hour
+                """,
+                (
+                    guild_id,
+                    start_time,
+                ),
+            ).fetchall()
 
         return [
             {
