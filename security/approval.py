@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+
+from dataclasses import dataclass, field
 import time
 
 
@@ -9,6 +10,7 @@ class ApprovalRequest:
     target_id: int | None = None
     target_name: str | None = None
     reason: str = ""
+    data: dict = field(default_factory=dict)
     created_at: float = 0.0
     approved: bool = False
     cancelled: bool = False
@@ -22,7 +24,8 @@ def create_approval_request(
     action: str,
     target_id: int | None = None,
     target_name: str | None = None,
-    reason: str = ""
+    reason: str = "",
+    data: dict | None = None
 ):
     request = ApprovalRequest(
         request_id=request_id,
@@ -30,6 +33,7 @@ def create_approval_request(
         target_id=target_id,
         target_name=target_name,
         reason=reason,
+        data=data or {},
         created_at=time.time()
     )
 

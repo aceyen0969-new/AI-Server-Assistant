@@ -1,686 +1,273 @@
 import json
-import re
+import uuid
 
 import discord
 
-from ai.manager import ask_ai
-
-
-MAX_MOVES = 50
-
-
-def extract_json(text: str):
-    """
-    Extract JSON from an AI response.
-    Handles both plain JSON and ```json code blocks.
-    """
-
-    text = text.strip()
-
-    if text.startswith("```"):
-        text = re.sub(
-            r"^```(?:json)?\s*",
-            "",
-            text,
-            flags=re.IGNORECASE
-        )
-
-        text = re.sub(
-            r"\s*```$",
-            "",
-            text
-        )
-
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-
-        if start == -1 or end == -1:
-            raise ValueError("No JSON object found.")
-
-        return json.loads(text[start:end + 1])
-
-
-def build_server_structure(guild: discord.Guild):
-    """
-    Build a snapshot of the current Discord server structure.
-    """
-
-    categories = []
-
-    for category in guild.categories:
-        channels = []
-
-        for channel in category.channels:
-            if isinstance(channel, discord.TextChannel):
-                channel_type = "text"
-
-            elif isinstance(channel, discord.VoiceChannel):
-                channel_type = "voice"
-
-            else:
-                continue
-
-            channels.append({
-                "id": channel.id,
-                "name": channel.name,
-                "type": channel_type
-            })
-
-        categories.append({
-            "id": category.id,
-            "name": category.name,
-            "channels": channels
-        })
-
-    uncategorized = []
-
-    for channel in guild.channels:
-        if channel.category is not None:
-            continue
-
-        if isinstance(channel, discord.TextChannel):
-            channel_type = "text"
-
-        elif isinstance(channel, discord.VoiceChannel):
-            channel_type = "voice"
-
-        else:
-            continue
-
-        uncategorized.append({
-            "id": channel.id,
-            "name": channel.name,
-            "type": channel_type
-        })
-
-    return {
-        "categories": categories,
-        "uncategorized": uncategorized
-    }
-
-
-def build_ai_prompt(guild: discord.Guild, structure):
-    """
-    Create a strict prompt requiring a JSON-only organization plan.
-    """
-
-    return f"""
-You are the AI Discord Server Organization Planner.
-
-Your job is to analyze the REAL Discord server structure below
-and create a safe organization plan.
-
-SERVER NAME:
-{guild.name}
-
-CURRENT SERVER STRUCTURE:
-{json.dumps(structure, indent=2)}
-
-IMPORTANT RULES:
-
-1. Use ONLY channel IDs and category IDs provided in the server structure.
-2. NEVER invent IDs.
-3. NEVER rename channels.
-4. NEVER delete channels.
-5. NEVER change permissions.
-6. NEVER change channel types.
-7. ONLY suggest moving existing channels into existing categories.
-8. Do not create new categories.
-9. Do not move channels if they are already in the correct category.
-10. Keep the number of moves at or below {MAX_MOVES}.
-11. Prefer minimal changes.
-12. If the current organization is already good, return an empty moves list.
-13. The "reason" should briefly explain why the proposed organization is better.
-
-RETURN ONLY VALID JSON.
-
-Use EXACTLY this structure:
-
-{{
-  "moves": [
-    {{
-      "channel_id": 123456789,
-      "target_category_id": 987654321
-    }}
-  ],
-  "reason": "Brief explanation of the proposed organization."
-}}
-
-The IDs above are examples only.
-Use the REAL IDs from the server structure.
-
-Do not include Markdown.
-Do not include ```json.
-Do not include any text outside the JSON object.
-"""
-
-
-def validate_plan(
-    guild: discord.Guild,
-    structure,
-    plan
-):
-    """
-    Validate the AI-generated plan before anything is changed.
-    """
-
-    if not isinstance(plan, dict):
-        return False, "AI returned an invalid plan."
-
-    moves = plan.get("moves")
-
-    if not isinstance(moves, list):
-        return False, "AI plan does not contain a valid moves list."
-
-    if len(moves) > MAX_MOVES:
-        return False, f"AI requested more than {MAX_MOVES} channel moves."
-
-    if not isinstance(plan.get("reason"), str):
-        return False, "AI plan does not contain a valid reason."
-
-    valid_channel_ids = set()
-    valid_category_ids = set()
-
-    for category in structure["categories"]:
-        valid_category_ids.add(category["id"])
-
-        for channel in category["channels"]:
-            valid_channel_ids.add(channel["id"])
-
-    for channel in structure["uncategorized"]:
-        valid_channel_ids.add(channel["id"])
-
-    seen_channels = set()
-
-    for move in moves:
-
-        if not isinstance(move, dict):
-            return False, "A move entry is invalid."
-
-        channel_id = move.get("channel_id")
-        target_category_id = move.get(
-            "target_category_id"
-        )
-
-        if not isinstance(channel_id, int):
-            return False, "A channel ID is invalid."
-
-        if not isinstance(target_category_id, int):
-            return False, "A category ID is invalid."
-
-        if channel_id not in valid_channel_ids:
-            return False, (
-                f"AI referenced an unknown channel ID: "
-                f"{channel_id}"
-            )
-
-        if target_category_id not in valid_category_ids:
-            return False, (
-                f"AI referenced an unknown category ID: "
-                f"{target_category_id}"
-            )
-
-        if channel_id in seen_channels:
-            return False, (
-                f"Channel {channel_id} appears more than once."
-            )
-
-        seen_channels.add(channel_id)
-
-    return True, None
-
-
-class OrganizationView(discord.ui.View):
-
-    def __init__(
-        self,
-        author_id: int,
-        guild: discord.Guild,
-        plan: dict
-    ):
-        super().__init__(timeout=120)
-
-        self.author_id = author_id
-        self.guild = guild
-        self.plan = plan
-
-    async def interaction_check(
-        self,
-        interaction: discord.Interaction
-    ):
-
-        if interaction.user.id != self.author_id:
-
-            await interaction.response.send_message(
-                "❌ Only the person who created this proposal "
-                "can use these buttons.",
-                ephemeral=True
-            )
-
-            return False
-
-        return True
-
-    @discord.ui.button(
-        label="Confirm",
-        emoji="✅",
-        style=discord.ButtonStyle.success
-    )
-    async def confirm(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-
-        for item in self.children:
-            item.disabled = True
-
-        await interaction.response.edit_message(
-            view=self
-        )
-
-        guild = self.guild
-
-        me = guild.me
-
-        if me is None:
-            await interaction.followup.send(
-                "❌ I couldn't verify my permissions."
-            )
-            return
-
-        if not me.guild_permissions.manage_channels:
-            await interaction.followup.send(
-                "❌ I need the **Manage Channels** permission "
-                "to apply this organization."
-            )
-            return
-
-        try:
-            await guild.fetch_channels()
-
-        except Exception as e:
-            print("----------------------------------------")
-            print("❌ Failed to refresh channels")
-            print(e)
-            print("----------------------------------------")
-
-            await interaction.followup.send(
-                "❌ I couldn't refresh the server's channels "
-                "before applying the changes."
-            )
-
-            return
-
-        current_channels = {
-            channel.id: channel
-            for channel in guild.channels
-        }
-
-        current_categories = {
-            category.id: category
-            for category in guild.categories
-        }
-
-        moves = self.plan.get("moves", [])
-
-        if not moves:
-            await interaction.followup.send(
-                "ℹ️ There are no channel moves to apply."
-            )
-            return
-
-        moved = 0
-        failed = 0
-        skipped = 0
-
-        for move in moves:
-
-            channel_id = move["channel_id"]
-            target_category_id = move[
-                "target_category_id"
-            ]
-
-            channel = current_channels.get(
-                channel_id
-            )
-
-            category = current_categories.get(
-                target_category_id
-            )
-
-            if channel is None:
-                failed += 1
-                print(
-                    f"❌ Channel {channel_id} no longer exists."
-                )
-                continue
-
-            if category is None:
-                failed += 1
-                print(
-                    f"❌ Category {target_category_id} "
-                    f"no longer exists."
-                )
-                continue
-
-            if channel.category_id == category.id:
-                skipped += 1
-                continue
-
-            try:
-
-                await channel.edit(
-                    category=category,
-                    reason=(
-                        "AI Server Assistant "
-                        "organization"
-                    )
-                )
-
-                moved += 1
-
-                print(
-                    f"✅ Moved #{channel.name} "
-                    f"→ {category.name}"
-                )
-
-            except discord.Forbidden:
-
-                failed += 1
-
-                print(
-                    f"❌ Permission denied for "
-                    f"#{channel.name}"
-                )
-
-            except discord.HTTPException as e:
-
-                failed += 1
-
-                print(
-                    f"❌ Discord error moving "
-                    f"#{channel.name}: {e}"
-                )
-
-        result = (
-            "## ✅ Organization Applied\n\n"
-            f"**Moved:** {moved}\n"
-            f"**Skipped:** {skipped}\n"
-            f"**Failed:** {failed}"
-        )
-
-        await interaction.followup.send(
-            result
-        )
-
-    @discord.ui.button(
-        label="Cancel",
-        emoji="❌",
-        style=discord.ButtonStyle.danger
-    )
-    async def cancel(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-
-        for item in self.children:
-            item.disabled = True
-
-        await interaction.response.edit_message(
-            view=self
-        )
-
-        await interaction.followup.send(
-            "❌ **Organization proposal cancelled.**\n\n"
-            "No channels were changed."
-        )
-
-    async def on_timeout(self):
-
-        for item in self.children:
-            item.disabled = True
-
-
-def create_proposal_text(
-    guild: discord.Guild,
-    plan: dict
-):
-    """
-    Convert the validated JSON plan into a readable proposal.
-    """
-
-    moves = plan.get("moves", [])
-
-    if not moves:
-        return (
-            "## 🧠 AI Organization Proposal\n\n"
-            "Your server already looks reasonably organized. "
-            "No channel moves are recommended.\n\n"
-            f"**Why:** {plan['reason']}"
-        )
-
-    lines = [
-        "## 🧠 AI Organization Proposal",
-        "",
-        "The AI recommends these channel moves:",
-        ""
-    ]
-
-    channels_by_id = {
-        channel.id: channel
-        for channel in guild.channels
-    }
-
-    categories_by_id = {
-        category.id: category
-        for category in guild.categories
-    }
-
-    for move in moves:
-
-        channel = channels_by_id.get(
-            move["channel_id"]
-        )
-
-        category = categories_by_id.get(
-            move["target_category_id"]
-        )
-
-        if channel is None or category is None:
-            continue
-
-        current_category = (
-            channel.category.name
-            if channel.category
-            else "Uncategorized"
-        )
-
-        lines.append(
-            f"• **#{channel.name}**\n"
-            f"  `{current_category}` → "
-            f"`{category.name}`"
-        )
-
-    lines.extend([
-        "",
-        f"**Why:** {plan['reason']}",
-        "",
-        "⚠️ **No changes have been made yet.**",
-        "Press **Confirm** to apply the proposed moves."
-    ])
-
-    return "\n".join(lines)
+from ai.providers import (
+    ask_gemini,
+    ask_openrouter_json,
+    ask_groq_json
+)
+
+from security.actions import (
+    ActionRequest,
+    evaluate_action
+)
+
+from security.approval import (
+    create_approval_request
+)
+
+from security.approval_view import (
+    ApprovalView
+)
 
 
 async def setup(bot):
 
     @bot.tree.command(
         name="organize",
-        description=(
-            "Ask AI for a safe channel organization proposal."
-        )
+        description="Ask the AI to suggest safe server organization changes."
     )
-    async def organize(
-        interaction: discord.Interaction
-    ):
+    async def organize(interaction: discord.Interaction):
+
+        await interaction.response.defer()
 
         guild = interaction.guild
 
         if guild is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ This command can only be used inside a server."
             )
             return
 
-        me = guild.me
+        categories = []
 
-        if me is None:
-            await interaction.response.send_message(
-                "❌ I couldn't verify my permissions."
-            )
-            return
+        for category in guild.categories:
+            categories.append({
+                "id": category.id,
+                "name": category.name
+            })
 
-        if not me.guild_permissions.manage_channels:
-            await interaction.response.send_message(
-                "❌ I need the **Manage Channels** permission "
-                "to organize channels."
-            )
-            return
+        channels = []
 
-        await interaction.response.defer()
-
-        try:
-
-            structure = build_server_structure(
-                guild
-            )
-
-            prompt = build_ai_prompt(
-                guild,
-                structure
-            )
-
-            print("----------------------------------------")
-            print("🧠 Generating organization plan...")
-            print("----------------------------------------")
-
-            result = await ask_ai(
-                prompt,
-                history=[]
-            )
-
-            answer = result.get("answer")
-            provider = result.get("provider")
-
-            if not answer:
-
-                await interaction.followup.send(
-                    "❌ All AI providers are currently "
-                    "unavailable. No changes were made."
+        for channel in guild.channels:
+            if isinstance(
+                channel,
+                (
+                    discord.TextChannel,
+                    discord.VoiceChannel,
+                    discord.StageChannel,
+                    discord.ForumChannel
                 )
+            ):
+                channels.append({
+                    "id": channel.id,
+                    "name": channel.name,
+                    "type": str(channel.type),
+                    "category_id": (
+                        channel.category.id
+                        if channel.category
+                        else None
+                    ),
+                    "category_name": (
+                        channel.category.name
+                        if channel.category
+                        else "No Category"
+                    )
+                })
 
-                return
+        server_context = {
+            "server_name": guild.name,
+            "categories": categories,
+            "channels": channels
+        }
 
-            print("----------------------------------------")
-            print(
-                f"🤖 Organization provider: {provider}"
-            )
-            print("----------------------------------------")
+        prompt = f"""
+You are organizing a Discord server.
 
+SERVER INFORMATION:
+{json.dumps(server_context, indent=2)}
+
+Your job is to identify channels that appear to be in
+the wrong category.
+
+Return ONLY a JSON object using exactly this structure:
+
+{{
+    "changes": [
+        {{
+            "channel_id": 123456789,
+            "channel_name": "gaming",
+            "current_category_id": 111111111,
+            "current_category_name": "Voice Channels",
+            "new_category_id": 222222222,
+            "new_category_name": "Text Channels",
+            "reason": "The channel is a text channel but is currently under a voice category."
+        }}
+    ]
+}}
+
+Rules:
+
+- Only suggest changes that are clearly useful.
+- Use the REAL channel and category IDs supplied above.
+- Never invent IDs.
+- Do not create categories.
+- Do not delete channels.
+- Do not rename channels.
+- Do not modify permissions.
+- If no changes are needed, return:
+{{"changes": []}}
+"""
+
+        providers = [
+            ("Gemini", ask_gemini),
+            ("OpenRouter", ask_openrouter_json),
+            ("Groq", ask_groq_json)
+        ]
+
+        result = None
+        provider_used = None
+        errors = []
+
+        for provider_name, provider_function in providers:
             try:
+                print("----------------------------------------")
+                print(f"🤖 Organize trying {provider_name}...")
 
-                plan = extract_json(
-                    answer
+                raw_response = await provider_function(prompt)
+
+                result = json.loads(raw_response)
+                provider_used = provider_name
+
+                print(
+                    f"✅ Organize response from {provider_name}"
                 )
+
+                break
 
             except Exception as e:
-
-                print("----------------------------------------")
-                print("❌ Failed to parse AI JSON")
-                print(e)
-                print("AI response:")
-                print(answer)
-                print("----------------------------------------")
-
-                await interaction.followup.send(
-                    "❌ The AI returned an invalid "
-                    "organization plan.\n\n"
-                    "🛡️ No changes were made."
+                error_text = str(e)
+                errors.append(
+                    f"{provider_name}: {error_text}"
                 )
 
-                return
-
-            valid, error = validate_plan(
-                guild,
-                structure,
-                plan
-            )
-
-            if not valid:
-
-                print("----------------------------------------")
-                print("❌ AI organization plan failed validation")
-                print(f"Reason: {error}")
-                print("----------------------------------------")
-
-                await interaction.followup.send(
-                    "❌ The AI organization plan failed "
-                    "safety validation.\n\n"
-                    f"**Reason:** {error}\n\n"
-                    "🛡️ **No changes were made.**"
+                print(
+                    f"❌ Organize {provider_name} failed:"
                 )
+                print(error_text)
 
-                return
-
-            proposal = create_proposal_text(
-                guild,
-                plan
+        if result is None:
+            await interaction.followup.send(
+                "❌ The AI organization planner failed.\n\n"
+                + "\n".join(errors)
             )
+            return
+
+        changes = result.get("changes", [])
+
+        if not changes:
+            await interaction.followup.send(
+                "✅ The AI found no obvious channel organization changes."
+            )
+            return
+
+        approved_requests = []
+
+        for change in changes:
+
+            channel_id = change.get("channel_id")
+            new_category_id = change.get("new_category_id")
+
+            channel = guild.get_channel(channel_id)
+            new_category = guild.get_channel(new_category_id)
+
+            if channel is None:
+                continue
+
+            if not isinstance(
+                new_category,
+                discord.CategoryChannel
+            ):
+                continue
+
+            action_request = ActionRequest(
+                action="move_channel",
+                target_id=channel.id,
+                target_name=channel.name,
+                reason=change.get(
+                    "reason",
+                    "AI suggested reorganizing this channel."
+                ),
+                data={
+                    "new_category_id": new_category.id,
+                    "new_category_name": new_category.name
+                }
+            )
+
+            decision = evaluate_action(
+                action_request
+            )
+
+            if not decision["requires_approval"]:
+                continue
+
+            request_id = str(uuid.uuid4())
+
+            create_approval_request(
+                request_id=request_id,
+                action=action_request.action,
+                target_id=action_request.target_id,
+                target_name=action_request.target_name,
+                reason=action_request.reason,
+                data=action_request.data
+            )
+
+            approved_requests.append(
+                (
+                    request_id,
+                    action_request,
+                    new_category
+                )
+            )
+
+        if not approved_requests:
+            await interaction.followup.send(
+                "⚠️ The AI returned changes, but none passed "
+                "the safety validation."
+            )
+            return
+
+        for (
+            request_id,
+            action_request,
+            new_category
+        ) in approved_requests:
 
             embed = discord.Embed(
-                title="🧠 AI Organization Proposal",
-                description=proposal[:4000],
-                color=discord.Color.blurple()
+                title="🛡️ AI Organization Request",
+                description=(
+                    f"**Action:** `move_channel`\n"
+                    f"**Channel:** {action_request.target_name}\n"
+                    f"**New Category:** {new_category.name}\n"
+                    f"**Reason:** {action_request.reason}\n\n"
+                    "⚠️ This change requires server-owner approval."
+                ),
+                color=discord.Color.orange()
             )
 
             embed.set_footer(
-                text=(
-                    f"AI provider: {provider} • "
-                    "Review before confirming"
-                )
+                text=f"AI Provider: {provider_used}"
             )
 
-            view = OrganizationView(
-                author_id=interaction.user.id,
-                guild=guild,
-                plan=plan
+            view = ApprovalView(
+                request_id=request_id,
+                allowed_user_id=guild.owner_id,
+                guild=guild
             )
 
             await interaction.followup.send(
                 embed=embed,
                 view=view
-            )
-
-            print("----------------------------------------")
-            print("✅ ORGANIZATION PROPOSAL CREATED")
-            print(f"Provider: {provider}")
-            print(f"Moves: {len(plan['moves'])}")
-            print("----------------------------------------")
-
-        except Exception as e:
-
-            print("----------------------------------------")
-            print("❌ ORGANIZE COMMAND ERROR")
-            print(e)
-            print("----------------------------------------")
-
-            await interaction.followup.send(
-                "❌ Something went wrong while creating "
-                "the organization proposal.\n\n"
-                "🛡️ No changes were made."
             )
