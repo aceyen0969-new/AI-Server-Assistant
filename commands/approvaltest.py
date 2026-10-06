@@ -49,7 +49,8 @@ async def setup(bot):
 
         view = ApprovalView(
             request_id=request_id,
-            allowed_user_id=interaction.guild.owner_id
+            allowed_user_id=interaction.guild.owner_id,
+            guild=interaction.guild
         )
 
         await interaction.response.send_message(
