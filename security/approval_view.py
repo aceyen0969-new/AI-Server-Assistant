@@ -11,6 +11,8 @@ from security.actions import (
     can_execute_after_approval,
 )
 
+from ai.action_executor import execute_action
+
 
 class ApprovalView(discord.ui.View):
 
@@ -36,7 +38,6 @@ class ApprovalView(discord.ui.View):
                 "You are not authorized to approve this action.",
                 ephemeral=True,
             )
-
             return False
 
         return True
@@ -61,7 +62,6 @@ class ApprovalView(discord.ui.View):
                 embed=None,
                 view=None,
             )
-
             return
 
         if request.cancelled:
@@ -70,7 +70,6 @@ class ApprovalView(discord.ui.View):
                 embed=None,
                 view=None,
             )
-
             return
 
         if request.approved:
@@ -79,7 +78,6 @@ class ApprovalView(discord.ui.View):
                 embed=None,
                 view=None,
             )
-
             return
 
         action_request = ActionRequest(
@@ -102,7 +100,6 @@ class ApprovalView(discord.ui.View):
                 embed=None,
                 view=None,
             )
-
             return
 
         success = approve_request(
@@ -117,7 +114,6 @@ class ApprovalView(discord.ui.View):
                 embed=None,
                 view=None,
             )
-
             return
 
         await self.execute_approved_action(
@@ -130,7 +126,32 @@ class ApprovalView(discord.ui.View):
         interaction: discord.Interaction,
         request,
     ):
-        """Execute an action after owner approval."""
+        """Execute an approved action using the central executor."""
+
+        action = {
+            "action": request.action,
+            **request.data,
+        }
+
+        success = await execute_action(
+            self.guild,
+            action,
+        )
+
+        if not success:
+
+            await interaction.response.edit_message(
+                content=(
+                    "The action was approved, but Discord "
+                    "could not complete it.\n\n"
+                    "Check the bot's permissions and "
+                    "make sure the target still exists."
+                ),
+                embed=None,
+                view=None,
+            )
+
+            return
 
         if request.action == "move_channel":
 
@@ -152,90 +173,29 @@ class ApprovalView(discord.ui.View):
 
             if channel is None:
                 await interaction.response.edit_message(
-                    content="The target channel no longer exists.",
-                    embed=None,
-                    view=None,
-                )
-
-                return
-
-            if category is None:
-                await interaction.response.edit_message(
-                    content="The target category no longer exists.",
-                    embed=None,
-                    view=None,
-                )
-
-                return
-
-            if not isinstance(
-                category,
-                discord.CategoryChannel,
-            ):
-                await interaction.response.edit_message(
-                    content="The selected destination is not a category.",
-                    embed=None,
-                    view=None,
-                )
-
-                return
-
-            if channel.category_id == category.id:
-                await interaction.response.edit_message(
                     content=(
-                        f"`{channel.name}` is already inside "
-                        f"`{category.name}`."
+                        "The channel was moved, "
+                        "but it could no longer be found."
                     ),
                     embed=None,
                     view=None,
                 )
-
                 return
 
-            old_category_name = (
-                channel.category.name
-                if channel.category
-                else "No Category"
+            category_name = (
+                category.name
+                if isinstance(
+                    category,
+                    discord.CategoryChannel,
+                )
+                else "Unknown Category"
             )
-
-            try:
-                await channel.edit(
-                    category=category,
-                    reason=(
-                        "AI Server Assistant action "
-                        f"approved by {interaction.user}"
-                    ),
-                )
-
-            except discord.Forbidden:
-                await interaction.response.edit_message(
-                    content=(
-                        "Discord denied the action. "
-                        "Check the bot's Manage Channels permission."
-                    ),
-                    embed=None,
-                    view=None,
-                )
-
-                return
-
-            except discord.HTTPException as e:
-                await interaction.response.edit_message(
-                    content=(
-                        f"Discord returned an error: `{e}`"
-                    ),
-                    embed=None,
-                    view=None,
-                )
-
-                return
 
             embed = discord.Embed(
                 title="Channel Moved",
                 description=(
                     f"**Channel:** {channel.mention}\n"
-                    f"**From:** `{old_category_name}`\n"
-                    f"**To:** `{category.name}`\n"
+                    f"**To:** `{category_name}`\n"
                     f"**Reason:** {request.reason}"
                 ),
                 color=discord.Color.green(),
@@ -255,7 +215,7 @@ class ApprovalView(discord.ui.View):
         await interaction.response.edit_message(
             content=(
                 f"The action `{request.action}` "
-                "does not have an approval executor yet."
+                "was approved and executed."
             ),
             embed=None,
             view=None,
@@ -281,7 +241,6 @@ class ApprovalView(discord.ui.View):
                 embed=None,
                 view=None,
             )
-
             return
 
         if request.approved:
@@ -290,7 +249,6 @@ class ApprovalView(discord.ui.View):
                 embed=None,
                 view=None,
             )
-
             return
 
         if request.cancelled:
@@ -299,7 +257,6 @@ class ApprovalView(discord.ui.View):
                 embed=None,
                 view=None,
             )
-
             return
 
         success = cancel_request(
@@ -312,11 +269,9 @@ class ApprovalView(discord.ui.View):
                 embed=None,
                 view=None,
             )
-
             return
 
         await interaction.response.edit_message(
             content="Action cancelled.",
-            embed=None,
             view=None,
         )

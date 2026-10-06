@@ -70,7 +70,7 @@ GROQ_MODEL = "openai/gpt-oss-120b"
 
 
 # =========================================================
-# GEMINI
+# GEMINI NORMAL CHAT
 # =========================================================
 
 async def ask_gemini(prompt):
@@ -95,7 +95,35 @@ async def ask_gemini(prompt):
 
 
 # =========================================================
-# CLAUDE
+# GEMINI JSON
+# =========================================================
+
+async def ask_gemini_json(prompt):
+
+    if gemini_client is None:
+        raise RuntimeError(
+            "Gemini API key is not configured."
+        )
+
+    response = await asyncio.to_thread(
+        gemini_client.models.generate_content,
+        model=GEMINI_MODEL,
+        contents=prompt,
+        config={
+            "response_mime_type": "application/json"
+        }
+    )
+
+    if not response.text:
+        raise RuntimeError(
+            "Gemini returned an empty JSON response."
+        )
+
+    return response.text
+
+
+# =========================================================
+# CLAUDE NORMAL CHAT
 # =========================================================
 
 async def ask_claude(prompt):
@@ -155,6 +183,64 @@ async def ask_claude(prompt):
 
 
 # =========================================================
+# CLAUDE JSON
+# =========================================================
+
+async def ask_claude_json(prompt):
+
+    if anthropic_client is None:
+        raise RuntimeError(
+            "Anthropic API key is not configured."
+        )
+
+    response = await asyncio.to_thread(
+        anthropic_client.messages.create,
+        model=CLAUDE_MODEL,
+        max_tokens=2048,
+        system=(
+            "You are a Discord server organization planner.\n\n"
+            "Return ONLY valid JSON.\n"
+            "Do not return Markdown.\n"
+            "Do not return code fences.\n"
+            "Do not return explanations.\n"
+            "Follow the exact JSON structure requested."
+        ),
+        messages=[
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    )
+
+    if not response.content:
+        raise RuntimeError(
+            "Claude returned an empty JSON response."
+        )
+
+    text_parts = []
+
+    for block in response.content:
+
+        if hasattr(block, "text"):
+
+            text_parts.append(
+                block.text
+            )
+
+    answer = "\n".join(
+        text_parts
+    ).strip()
+
+    if not answer:
+        raise RuntimeError(
+            "Claude returned an empty JSON response."
+        )
+
+    return answer
+
+
+# =========================================================
 # OPENROUTER NORMAL CHAT
 # =========================================================
 
@@ -182,7 +268,6 @@ IMPORTANT BEHAVIOR:
 - Answer the user's actual question.
 - Do NOT greet the user unless they greeted you.
 - Do NOT introduce yourself.
-- Do NOT describe what you can do.
 - Do NOT give a generic list of possible services.
 - Do NOT repeat the user's question.
 - Do NOT pretend to have performed Discord actions.
