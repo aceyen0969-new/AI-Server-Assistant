@@ -192,6 +192,7 @@ class Analytics(commands.Cog):
             "increasing": "📈 Increasing",
             "decreasing": "📉 Decreasing",
             "stable": "➡️ Stable",
+            "sporadic": "⚡ Sporadic",
             "insufficient_data": "⚠️ Insufficient data",
             "no_activity": "⚪ No activity",
             "unknown": "❓ Unknown",
