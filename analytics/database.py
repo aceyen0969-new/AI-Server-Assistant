@@ -51,6 +51,20 @@ def initialize_database():
             """
         )
 
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS server_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER NOT NULL,
+                memory_type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                occurrences INTEGER NOT NULL DEFAULT 1
+            )
+            """
+        )
+
         connection.commit()
 
     finally:
@@ -567,6 +581,151 @@ def get_daily_activity(
             )
 
         return results
+
+    finally:
+
+        connection.close()
+
+
+def save_memory(
+    guild_id: int,
+    memory_type: str,
+    content: str,
+):
+    connection = get_connection()
+
+    try:
+
+        now = datetime.now(
+            timezone.utc
+        ).isoformat()
+
+        existing = connection.execute(
+            """
+            SELECT
+                id,
+                occurrences
+            FROM server_memory
+            WHERE guild_id = ?
+            AND memory_type = ?
+            AND content = ?
+            """,
+            (
+                guild_id,
+                memory_type,
+                content,
+            ),
+        ).fetchone()
+
+        if existing is not None:
+
+            connection.execute(
+                """
+                UPDATE server_memory
+                SET
+                    last_seen_at = ?,
+                    occurrences = ?
+                WHERE id = ?
+                """,
+                (
+                    now,
+                    existing["occurrences"] + 1,
+                    existing["id"],
+                ),
+            )
+
+        else:
+
+            connection.execute(
+                """
+                INSERT INTO server_memory (
+                    guild_id,
+                    memory_type,
+                    content,
+                    created_at,
+                    last_seen_at,
+                    occurrences
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    guild_id,
+                    memory_type,
+                    content,
+                    now,
+                    now,
+                    1,
+                ),
+            )
+
+        connection.commit()
+
+    finally:
+
+        connection.close()
+
+
+def get_memories(
+    guild_id: int,
+    memory_type: str | None = None,
+    limit: int = 20,
+):
+    connection = get_connection()
+
+    try:
+
+        if memory_type is None:
+
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    guild_id,
+                    memory_type,
+                    content,
+                    created_at,
+                    last_seen_at,
+                    occurrences
+                FROM server_memory
+                WHERE guild_id = ?
+                ORDER BY last_seen_at DESC
+                LIMIT ?
+                """,
+                (
+                    guild_id,
+                    limit,
+                ),
+            ).fetchall()
+
+        else:
+
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    guild_id,
+                    memory_type,
+                    content,
+                    created_at,
+                    last_seen_at,
+                    occurrences
+                FROM server_memory
+                WHERE guild_id = ?
+                AND memory_type = ?
+                ORDER BY last_seen_at DESC
+                LIMIT ?
+                """,
+                (
+                    guild_id,
+                    memory_type,
+                    limit,
+                ),
+            ).fetchall()
+
+        return [
+            dict(row)
+            for row in rows
+        ]
 
     finally:
 
