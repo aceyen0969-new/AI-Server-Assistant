@@ -3,12 +3,17 @@ import asyncio
 import discord
 
 from analytics.analyzer import analyze_server
+from analytics.proposals import (
+    process_analytics_proposals,
+)
 
 
 ANALYTICS_INTERVAL = 60
 
 
-async def run_analytics_cycle(guild):
+async def run_analytics_cycle(
+    guild: discord.Guild,
+):
     """Run one scheduled analytics cycle."""
 
     print(
@@ -44,7 +49,7 @@ async def run_analytics_cycle(guild):
 
     summary = analysis.get(
         "summary",
-        "No summary available."
+        "No summary available.",
     )
 
     print(
@@ -52,21 +57,18 @@ async def run_analytics_cycle(guild):
         f"Summary: {summary}"
     )
 
-    # Find a channel named "analytics"
+    # ========================================
+    # FIND ANALYTICS CHANNEL
+    # ========================================
+
     analytics_channel = discord.utils.get(
         guild.text_channels,
-        name="analytics"
+        name="analytics",
     )
 
     print(
         "ANALYTICS SCHEDULER: "
         f"Found analytics channel: {analytics_channel}"
-    )
-
-    print(
-        "ANALYTICS SCHEDULER: "
-        f"Available text channels: "
-        f"{[channel.name for channel in guild.text_channels]}"
     )
 
     if analytics_channel is None:
@@ -78,27 +80,31 @@ async def run_analytics_cycle(guild):
 
         return
 
+    # ========================================
+    # BUILD REPORT EMBED
+    # ========================================
+
     embed = discord.Embed(
         title="📊 Automatic Server Analytics",
         description=summary,
-        color=discord.Color.blurple()
+        color=discord.Color.blurple(),
     )
 
     embed.add_field(
-        name="Reporting Period",
+        name="📅 Reporting Period",
         value="Last 7 days",
-        inline=True
+        inline=True,
     )
 
     embed.add_field(
-        name="AI Provider",
+        name="🤖 AI Provider",
         value=provider or "Unknown",
-        inline=True
+        inline=True,
     )
 
     observations = analysis.get(
         "observations",
-        []
+        [],
     )
 
     if observations:
@@ -107,14 +113,20 @@ async def run_analytics_cycle(guild):
 
         for observation in observations[:5]:
 
+            if not isinstance(
+                observation,
+                dict,
+            ):
+                continue
+
             title = observation.get(
                 "title",
-                "Observation"
+                "Observation",
             )
 
             description = observation.get(
                 "description",
-                "No description."
+                "No description.",
             )
 
             observation_text += (
@@ -122,15 +134,17 @@ async def run_analytics_cycle(guild):
                 f"{description}\n\n"
             )
 
-        embed.add_field(
-            name="Observations",
-            value=observation_text[:1024],
-            inline=False
-        )
+        if observation_text:
+
+            embed.add_field(
+                name="🔎 Observations",
+                value=observation_text[:1024],
+                inline=False,
+            )
 
     proposals = analysis.get(
         "proposals",
-        []
+        [],
     )
 
     if proposals:
@@ -139,14 +153,20 @@ async def run_analytics_cycle(guild):
 
         for proposal in proposals[:5]:
 
+            if not isinstance(
+                proposal,
+                dict,
+            ):
+                continue
+
             title = proposal.get(
                 "title",
-                "Proposal"
+                "Proposal",
             )
 
             description = proposal.get(
                 "description",
-                "No description."
+                "No description.",
             )
 
             proposal_text += (
@@ -154,11 +174,21 @@ async def run_analytics_cycle(guild):
                 f"{description}\n\n"
             )
 
-        embed.add_field(
-            name="Proposals",
-            value=proposal_text[:1024],
-            inline=False
-        )
+        if proposal_text:
+
+            embed.add_field(
+                name="💡 Proposals",
+                value=proposal_text[:1024],
+                inline=False,
+            )
+
+    embed.set_footer(
+        text=f"AI provider: {provider}"
+    )
+
+    # ========================================
+    # SEND REPORT
+    # ========================================
 
     try:
 
@@ -182,8 +212,22 @@ async def run_analytics_cycle(guild):
             repr(e)
         )
 
+        return
 
-async def analytics_scheduler(bot):
+    # ========================================
+    # PROCESS ACTIONABLE PROPOSALS
+    # ========================================
+
+    await process_analytics_proposals(
+        guild=guild,
+        proposals=proposals,
+        send_function=analytics_channel.send,
+    )
+
+
+async def analytics_scheduler(
+    bot,
+):
     """Run scheduled analytics for all connected servers."""
 
     while True:

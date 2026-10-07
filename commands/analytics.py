@@ -1,22 +1,10 @@
-import uuid
-
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from analytics.analyzer import analyze_server
-
-from security.actions import (
-    ActionRequest,
-    evaluate_action,
-)
-
-from security.approval import (
-    create_approval_request,
-)
-
-from security.approval_view import (
-    ApprovalView,
+from analytics.proposals import (
+    process_analytics_proposals,
 )
 
 
@@ -183,8 +171,10 @@ class Analytics(commands.Cog):
         if busiest_hour:
 
             embed.add_field(
-                name="🕕 Busiest Hour",
-                value=f"{busiest_hour.get('hour', '?')}:00 UTC",
+                name="🕐 Busiest Hour",
+                value=(
+                    f"{busiest_hour.get('hour', '?')}:00 UTC"
+                ),
                 inline=True,
             )
 
@@ -202,10 +192,10 @@ class Analytics(commands.Cog):
         }
 
         embed.add_field(
-            name="📈 Daily Trend",
+            name="📈 Activity Trend",
             value=trend_labels.get(
                 daily_trend,
-                daily_trend,
+                "❓ Unknown",
             ),
             inline=True,
         )
@@ -221,6 +211,12 @@ class Analytics(commands.Cog):
 
             for observation in observations:
 
+                if not isinstance(
+                    observation,
+                    dict,
+                ):
+                    continue
+
                 title = observation.get(
                     "title",
                     "Observation",
@@ -231,16 +227,31 @@ class Analytics(commands.Cog):
                     "",
                 )
 
-                observation_text += (
-                    f"**{title}**\n"
-                    f"{description}\n\n"
+                evidence = observation.get(
+                    "evidence",
+                    "",
                 )
 
-            embed.add_field(
-                name="🔎 Observations",
-                value=observation_text[:1024],
-                inline=False,
-            )
+                observation_text += (
+                    f"**{title}**\n"
+                    f"{description}\n"
+                )
+
+                if evidence:
+
+                    observation_text += (
+                        f"*Evidence: {evidence}*\n"
+                    )
+
+                observation_text += "\n"
+
+            if observation_text:
+
+                embed.add_field(
+                    name="🔎 Observations",
+                    value=observation_text[:1024],
+                    inline=False,
+                )
 
         proposals = analysis.get(
             "proposals",
@@ -252,6 +263,12 @@ class Analytics(commands.Cog):
             proposal_text = ""
 
             for proposal in proposals:
+
+                if not isinstance(
+                    proposal,
+                    dict,
+                ):
+                    continue
 
                 title = proposal.get(
                     "title",
@@ -268,11 +285,13 @@ class Analytics(commands.Cog):
                     f"{description}\n\n"
                 )
 
-            embed.add_field(
-                name="💡 Proposals",
-                value=proposal_text[:1024],
-                inline=False,
-            )
+            if proposal_text:
+
+                embed.add_field(
+                    name="💡 Proposals",
+                    value=proposal_text[:1024],
+                    inline=False,
+                )
 
         embed.set_footer(
             text=f"AI provider: {provider}"
@@ -286,208 +305,11 @@ class Analytics(commands.Cog):
         # ACTIONABLE PROPOSALS
         # ========================================
 
-        for proposal in proposals:
-
-            if not isinstance(
-                proposal,
-                dict,
-            ):
-                continue
-
-            action = proposal.get(
-                "action"
-            )
-
-            # Informational proposal.
-            # No Discord action is created.
-            if action is None:
-                continue
-
-            if not isinstance(
-                action,
-                dict,
-            ):
-                continue
-
-            action_type = action.get(
-                "action"
-            )
-
-            # ========================================
-            # CREATE CHANNEL
-            # ========================================
-
-            if action_type == "create_channel":
-
-                name = action.get(
-                    "name"
-                )
-
-                channel_type = action.get(
-                    "channel_type"
-                )
-
-                # Validate the AI-generated channel name.
-
-                if not isinstance(
-                    name,
-                    str,
-                ):
-                    continue
-
-                name = name.strip()
-
-                if not name:
-                    continue
-
-                if len(name) > 100:
-                    continue
-
-                # Only allow channel types supported
-                # by the action executor.
-
-                if channel_type not in (
-                    "text",
-                    "voice",
-                ):
-                    continue
-
-                # Prevent the AI from proposing a
-                # channel that already exists.
-
-                existing_channel = discord.utils.get(
-                    interaction.guild.channels,
-                    name=name,
-                )
-
-                if existing_channel is not None:
-                    continue
-
-                title = proposal.get(
-                    "title",
-                    "Create Channel",
-                )
-
-                description = proposal.get(
-                    "description",
-                    "",
-                )
-
-                reason = proposal.get(
-                    "reason",
-                    description,
-                )
-
-                # ====================================
-                # SECURITY ACTION REQUEST
-                # ====================================
-
-                action_request = ActionRequest(
-                    action="create_channel",
-                    target_name=name,
-                    reason=reason,
-                    data={
-                        "name": name,
-                        "channel_type": channel_type,
-                    },
-                )
-
-                decision = evaluate_action(
-                    action_request
-                )
-
-                # If the security system completely
-                # rejects the action, do nothing.
-
-                if (
-                    not decision["allowed"]
-                    and not decision["requires_approval"]
-                ):
-                    print(
-                        "ANALYTICS: Security rejected "
-                        "create_channel proposal."
-                    )
-                    continue
-
-                # Analytics proposals should not execute
-                # automatically. They must go through the
-                # approval system.
-
-                if not decision["requires_approval"]:
-
-                    print(
-                        "ANALYTICS: create_channel does not "
-                        "require approval. Skipping automatic execution."
-                    )
-
-                    continue
-
-                # ====================================
-                # CREATE APPROVAL REQUEST
-                # ====================================
-
-                request_id = str(
-                    uuid.uuid4()
-                )
-
-                create_approval_request(
-                    request_id=request_id,
-                    action="create_channel",
-                    target_name=name,
-                    reason=reason,
-                    data={
-                        "name": name,
-                        "channel_type": channel_type,
-                    },
-                )
-
-                # ====================================
-                # PROPOSAL EMBED
-                # ====================================
-
-                proposal_embed = discord.Embed(
-                    title="💡 AI Server Improvement Proposal",
-                    description=(
-                        f"**Proposal:** {title}\n\n"
-                        f"{description}\n\n"
-                        f"**Reason:** {reason}\n\n"
-                        f"**Action:** `create_channel`\n"
-                        f"**Name:** `{name}`\n"
-                        f"**Type:** `{channel_type}`\n\n"
-                        "This change requires server-owner approval."
-                    ),
-                    color=discord.Color.orange(),
-                )
-
-                proposal_embed.set_footer(
-                    text="AI Server Assistant"
-                )
-
-                # ====================================
-                # EXISTING APPROVAL VIEW
-                # ====================================
-
-                view = ApprovalView(
-                    request_id=request_id,
-                    allowed_user_id=interaction.guild.owner_id,
-                    guild=interaction.guild,
-                )
-
-                await interaction.followup.send(
-                    embed=proposal_embed,
-                    view=view,
-                )
-
-                continue
-
-            # ========================================
-            # UNSUPPORTED ACTION
-            # ========================================
-
-            print(
-                "ANALYTICS: Ignoring unsupported "
-                f"proposal action: {action_type}"
-            )
+        await process_analytics_proposals(
+            guild=interaction.guild,
+            proposals=proposals,
+            send_function=interaction.followup.send,
+        )
 
 
 async def setup(
