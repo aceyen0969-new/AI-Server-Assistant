@@ -15,7 +15,6 @@ def calculate_metrics(
     hourly_activity: list,
     daily_activity: list,
 ):
-    """Calculate useful summary metrics from activity data."""
 
     average_messages_per_member = 0
 
@@ -49,60 +48,78 @@ def calculate_metrics(
             key=lambda item: item["message_count"],
         )
 
-    # ========================================
-    # DAILY ACTIVITY TREND
-    # ========================================
-
     if len(daily_activity) < 2:
 
         daily_trend = "insufficient_data"
 
     else:
 
-        midpoint = len(daily_activity) // 2
+        active_days = [
+            day
+            for day in daily_activity
+            if day["message_count"] > 0
+        ]
 
-        first_period = daily_activity[:midpoint]
-        second_period = daily_activity[midpoint:]
-
-        first_total = sum(
-            day["message_count"]
-            for day in first_period
-        )
-
-        second_total = sum(
-            day["message_count"]
-            for day in second_period
-        )
-
-        if first_total == 0 and second_total == 0:
+        if not active_days:
 
             daily_trend = "no_activity"
 
-        elif first_total == 0:
+        elif len(active_days) <= 1:
 
-            daily_trend = "increasing"
-
-        elif second_total == 0:
-
-            daily_trend = "decreasing"
+            daily_trend = "sporadic"
 
         else:
 
-            change_ratio = (
-                second_total - first_total
-            ) / first_total
+            midpoint = len(daily_activity) // 2
 
-            if change_ratio >= 0.25:
+            first_period = daily_activity[:midpoint]
+            second_period = daily_activity[midpoint:]
 
-                daily_trend = "increasing"
+            first_total = sum(
+                day["message_count"]
+                for day in first_period
+            )
 
-            elif change_ratio <= -0.25:
+            second_total = sum(
+                day["message_count"]
+                for day in second_period
+            )
+
+            if first_total == 0 and second_total == 0:
+
+                daily_trend = "no_activity"
+
+            elif first_total == 0:
+
+                if second_total > 0:
+
+                    daily_trend = "increasing"
+
+                else:
+
+                    daily_trend = "no_activity"
+
+            elif second_total == 0:
 
                 daily_trend = "decreasing"
 
             else:
 
-                daily_trend = "stable"
+                change_ratio = (
+                    second_total - first_total
+                ) / first_total
+
+                if change_ratio >= 0.25:
+
+                    daily_trend = "increasing"
+
+                elif change_ratio <= -0.25:
+
+                    daily_trend = "decreasing"
+
+                else:
+
+                    daily_trend = "stable"
 
     return {
         "average_messages_per_member": round(
@@ -120,7 +137,6 @@ def build_activity_report(
     guild_id: int,
     days: int = 7,
 ):
-    """Build a server activity report for a time window."""
 
     total_messages = get_message_count(
         guild_id,

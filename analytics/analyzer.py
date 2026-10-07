@@ -4,6 +4,10 @@ from analytics.reporter import (
     build_activity_report,
 )
 
+from analytics.display import (
+    print_activity_report,
+)
+
 from analytics.database import (
     get_previous_analysis_report,
     record_analysis_report,
@@ -268,9 +272,19 @@ def print_analysis_result(
             f"{busiest_hour.get('hour')}:00 UTC"
         )
 
+    trend_labels = {
+        "increasing": "📈 Increasing",
+        "decreasing": "📉 Decreasing",
+        "stable": "➡️ Stable",
+        "sporadic": "⚡ Sporadic",
+        "insufficient_data": "⚠️ Insufficient data",
+        "no_activity": "⚪ No activity",
+        "unknown": "❓ Unknown",
+    }
+
     print(
         "  Activity trend: "
-        f"{metrics.get('daily_trend', 'unknown')}"
+        f"{trend_labels.get(metrics.get('daily_trend', 'unknown'), '❓ Unknown')}"
     )
 
     print()
@@ -438,6 +452,10 @@ async def analyze_server(
     report = build_activity_report(
         guild_id,
         days,
+    )
+
+    print_activity_report(
+        report
     )
 
     previous_report = get_previous_analysis_report(
