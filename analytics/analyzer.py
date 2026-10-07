@@ -11,6 +11,7 @@ from analytics.display import (
 from analytics.database import (
     get_previous_analysis_report,
     record_analysis_report,
+    save_memory,
 )
 
 from ai.provider_router import (
@@ -193,6 +194,68 @@ def validate_analysis(
         return False
 
     return True
+
+
+def save_analysis_memories(
+    guild_id: int,
+    analysis: dict,
+):
+    observations = analysis.get(
+        "observations",
+        [],
+    )
+
+    saved_count = 0
+
+    for observation in observations:
+
+        if not isinstance(
+            observation,
+            dict,
+        ):
+            continue
+
+        title = observation.get(
+            "title",
+            "",
+        )
+
+        description = observation.get(
+            "description",
+            "",
+        )
+
+        evidence = observation.get(
+            "evidence",
+            "",
+        )
+
+        if not title or not description:
+            continue
+
+        content_parts = [
+            title,
+            description,
+        ]
+
+        if evidence:
+            content_parts.append(
+                f"Evidence: {evidence}"
+            )
+
+        content = " ".join(
+            content_parts
+        )
+
+        save_memory(
+            guild_id=guild_id,
+            memory_type="observation",
+            content=content,
+        )
+
+        saved_count += 1
+
+    return saved_count
 
 
 def print_analysis_result(
@@ -537,6 +600,15 @@ async def analyze_server(
             "analysis": None,
             "historical_comparison": historical_comparison,
         }
+
+    saved_memories = save_analysis_memories(
+        guild_id=guild_id,
+        analysis=analysis,
+    )
+
+    print(
+        f"ANALYTICS: Saved {saved_memories} observation(s) to memory."
+    )
 
     record_analysis_report(
         guild_id=guild_id,
