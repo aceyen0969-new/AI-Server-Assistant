@@ -13,6 +13,11 @@ from analytics.database import (
     get_memories,
     record_analysis_report,
     save_memory,
+    save_objective_assessment,
+)
+
+from analytics.objectives import (
+    build_objective_context,
 )
 
 from ai.provider_router import (
@@ -150,13 +155,14 @@ def build_analysis_prompt(
     report: dict,
     historical_comparison: dict,
     memory_context: dict,
+    objective_context: list,
 ):
     return f"""
 You are an analytics AI for a Discord server.
 
 Analyze the provided server activity data.
 
-Your job is to identify useful, evidence-based patterns and recommend conservative improvements.
+Your job is to identify useful, evidence-based patterns, evaluate active server objectives when possible, and recommend conservative improvements.
 
 The server activity data does not contain message content.
 
@@ -172,6 +178,10 @@ Server memory:
 
 {json.dumps(memory_context, indent=2)}
 
+Active server objectives:
+
+{json.dumps(objective_context, indent=2)}
+
 Memory rules:
 
 1. Server memory contains observations from previous analytics runs.
@@ -185,7 +195,23 @@ Memory rules:
 9. Do not infer message content, opinions, emotions, or identities from memories.
 10. Memories do not contain raw message content.
 
-Rules:
+Objective rules:
+
+1. Active objectives represent persistent instructions from the server owner.
+2. Evaluate each active objective against the current report when the available data allows it.
+3. Current activity data is the primary evidence for objective evaluation.
+4. Historical comparison and server memory may provide supporting context only.
+5. Never claim that an objective is at risk without evidence.
+6. If the available analytics cannot determine whether an objective is at risk, explicitly state that there is insufficient evidence.
+7. Do not infer message content from activity metadata.
+8. Do not infer arguments, fights, harassment, threats, opinions, emotions, or other conversation content from message counts, timestamps, channels, or user IDs.
+9. Do not identify users by name.
+10. Treat user IDs as anonymous identifiers.
+11. Do not recommend punitive action based only on analytics metadata.
+12. Never execute actions.
+13. Objective assessment must remain evidence-based and conservative.
+
+General rules:
 
 1. Only make claims supported by the provided data.
 2. Do not invent information.
@@ -211,10 +237,21 @@ Rules:
 21. Never execute actions.
 22. Never output anything outside the required JSON object.
 
+For objective assessments, return one object for every active objective.
+
 Return exactly this JSON structure:
 
 {{
     "summary": "Short overall summary.",
+    "objectives": [
+        {{
+            "id": 1,
+            "objective": "Objective text.",
+            "status": "safe|at_risk|insufficient_evidence",
+            "assessment": "Evidence-based assessment.",
+            "evidence": "Specific data supporting the assessment."
+        }}
+    ],
     "observations": [
         {{
             "title": "Observation title",
@@ -250,6 +287,12 @@ def validate_analysis(
         return False
 
     if not isinstance(
+        analysis.get("objectives"),
+        list,
+    ):
+        return False
+
+    if not isinstance(
         analysis.get("observations"),
         list,
     ):
@@ -260,6 +303,47 @@ def validate_analysis(
         list,
     ):
         return False
+
+    valid_statuses = {
+        "safe",
+        "at_risk",
+        "insufficient_evidence",
+    }
+
+    for objective in analysis["objectives"]:
+
+        if not isinstance(
+            objective,
+            dict,
+        ):
+            return False
+
+        if not isinstance(
+            objective.get("id"),
+            int,
+        ):
+            return False
+
+        if not isinstance(
+            objective.get("objective"),
+            str,
+        ):
+            return False
+
+        if objective.get("status") not in valid_statuses:
+            return False
+
+        if not isinstance(
+            objective.get("assessment"),
+            str,
+        ):
+            return False
+
+        if not isinstance(
+            objective.get("evidence"),
+            str,
+        ):
+            return False
 
     return True
 
@@ -319,6 +403,81 @@ def save_analysis_memories(
             guild_id=guild_id,
             memory_type="observation",
             content=content,
+        )
+
+        saved_count += 1
+
+    return saved_count
+
+
+def save_analysis_objective_assessments(
+    guild_id: int,
+    analysis: dict,
+):
+    objectives = analysis.get(
+        "objectives",
+        [],
+    )
+
+    saved_count = 0
+
+    for objective in objectives:
+
+        if not isinstance(
+            objective,
+            dict,
+        ):
+            continue
+
+        objective_id = objective.get(
+            "id"
+        )
+
+        status = objective.get(
+            "status"
+        )
+
+        assessment = objective.get(
+            "assessment",
+            "",
+        )
+
+        evidence = objective.get(
+            "evidence",
+            "",
+        )
+
+        if not isinstance(
+            objective_id,
+            int,
+        ):
+            continue
+
+        if status not in {
+            "safe",
+            "at_risk",
+            "insufficient_evidence",
+        }:
+            continue
+
+        if not isinstance(
+            assessment,
+            str,
+        ):
+            continue
+
+        if not isinstance(
+            evidence,
+            str,
+        ):
+            continue
+
+        save_objective_assessment(
+            objective_id=objective_id,
+            guild_id=guild_id,
+            status=status,
+            assessment=assessment,
+            evidence=evidence,
         )
 
         saved_count += 1
@@ -467,6 +626,71 @@ def print_analysis_result(
         print(
             "  No previous report available."
         )
+
+    objectives = analysis.get(
+        "objectives",
+        [],
+    )
+
+    print()
+    print(
+        f"OBJECTIVES ({len(objectives)})"
+    )
+
+    for index, objective in enumerate(
+        objectives,
+        start=1,
+    ):
+
+        if not isinstance(
+            objective,
+            dict,
+        ):
+            continue
+
+        objective_id = objective.get(
+            "id",
+            "?",
+        )
+
+        objective_text = objective.get(
+            "objective",
+            "Unknown objective",
+        )
+
+        status = objective.get(
+            "status",
+            "unknown",
+        )
+
+        assessment = objective.get(
+            "assessment",
+            "",
+        )
+
+        evidence = objective.get(
+            "evidence",
+            "",
+        )
+
+        print()
+        print(
+            f"  {index}. Objective #{objective_id}: {objective_text}"
+        )
+
+        print(
+            f"     Status: {status}"
+        )
+
+        print(
+            f"     Assessment: {assessment}"
+        )
+
+        if evidence:
+
+            print(
+                f"     Evidence: {evidence}"
+            )
 
     print()
     print("AI SUMMARY")
@@ -617,10 +841,19 @@ async def analyze_server(
         f"ANALYTICS: Loaded {memory_context['count']} memory item(s)."
     )
 
+    objective_context = build_objective_context(
+        guild_id
+    )
+
+    print(
+        f"ANALYTICS: Loaded {len(objective_context)} active objective(s)."
+    )
+
     prompt = build_analysis_prompt(
         report,
         historical_comparison,
         memory_context,
+        objective_context,
     )
 
     provider_name, raw_response = (
@@ -691,6 +924,18 @@ async def analyze_server(
 
     print(
         f"ANALYTICS: Saved {saved_memories} observation(s) to memory."
+    )
+
+    saved_objective_assessments = (
+        save_analysis_objective_assessments(
+            guild_id=guild_id,
+            analysis=analysis,
+        )
+    )
+
+    print(
+        "ANALYTICS: Saved "
+        f"{saved_objective_assessments} objective assessment(s)."
     )
 
     record_analysis_report(

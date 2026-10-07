@@ -14,6 +14,7 @@ from commands import aistatus
 from commands import approvaltest
 from commands import cleanup
 from commands import analytics
+from commands import objective
 
 from moderation.moderator import moderation_manager
 
@@ -73,6 +74,7 @@ async def load_features():
 
     await analytics.setup(bot)
 
+    await objective.setup(bot)
 
 @bot.event
 async def on_ready():
@@ -92,6 +94,17 @@ async def on_ready():
     print("----------------------------------------")
 
     try:
+
+
+
+        print(
+            "COMMAND TREE:",
+            [
+                command.name
+                for command in bot.tree.get_commands()
+            ]
+
+        )
 
         synced = await bot.tree.sync()
 

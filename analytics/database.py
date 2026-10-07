@@ -65,6 +65,35 @@ def initialize_database():
             """
         )
 
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS server_objectives (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER NOT NULL,
+                objective TEXT NOT NULL,
+                description TEXT,
+                priority TEXT NOT NULL DEFAULT 'normal',
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS objective_assessments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                objective_id INTEGER NOT NULL,
+                guild_id INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                assessment TEXT NOT NULL,
+                evidence TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
         connection.commit()
 
     finally:
@@ -726,6 +755,405 @@ def get_memories(
             dict(row)
             for row in rows
         ]
+
+    finally:
+
+        connection.close()
+
+
+def create_objective(
+    guild_id: int,
+    objective: str,
+    description: str = "",
+    priority: str = "normal",
+):
+    connection = get_connection()
+
+    try:
+
+        now = datetime.now(
+            timezone.utc
+        ).isoformat()
+
+        cursor = connection.execute(
+            """
+            INSERT INTO server_objectives (
+                guild_id,
+                objective,
+                description,
+                priority,
+                status,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                guild_id,
+                objective,
+                description,
+                priority,
+                "active",
+                now,
+                now,
+            ),
+        )
+
+        connection.commit()
+
+        return cursor.lastrowid
+
+    finally:
+
+        connection.close()
+
+
+def get_objectives(
+    guild_id: int,
+    status: str | None = None,
+    limit: int = 20,
+):
+    connection = get_connection()
+
+    try:
+
+        if status is None:
+
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    guild_id,
+                    objective,
+                    description,
+                    priority,
+                    status,
+                    created_at,
+                    updated_at
+                FROM server_objectives
+                WHERE guild_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (
+                    guild_id,
+                    limit,
+                ),
+            ).fetchall()
+
+        else:
+
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    guild_id,
+                    objective,
+                    description,
+                    priority,
+                    status,
+                    created_at,
+                    updated_at
+                FROM server_objectives
+                WHERE guild_id = ?
+                AND status = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (
+                    guild_id,
+                    status,
+                    limit,
+                ),
+            ).fetchall()
+
+        return [
+            dict(row)
+            for row in rows
+        ]
+
+    finally:
+
+        connection.close()
+
+
+def get_objective(
+    objective_id: int,
+    guild_id: int,
+):
+    connection = get_connection()
+
+    try:
+
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                guild_id,
+                objective,
+                description,
+                priority,
+                status,
+                created_at,
+                updated_at
+            FROM server_objectives
+            WHERE id = ?
+            AND guild_id = ?
+            """,
+            (
+                objective_id,
+                guild_id,
+            ),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return dict(
+            row
+        )
+
+    finally:
+
+        connection.close()
+
+
+def update_objective(
+    objective_id: int,
+    guild_id: int,
+    status: str | None = None,
+    priority: str | None = None,
+    description: str | None = None,
+):
+    connection = get_connection()
+
+    try:
+
+        existing = connection.execute(
+            """
+            SELECT
+                id,
+                status,
+                priority,
+                description
+            FROM server_objectives
+            WHERE id = ?
+            AND guild_id = ?
+            """,
+            (
+                objective_id,
+                guild_id,
+            ),
+        ).fetchone()
+
+        if existing is None:
+            return False
+
+        new_status = (
+            status
+            if status is not None
+            else existing["status"]
+        )
+
+        new_priority = (
+            priority
+            if priority is not None
+            else existing["priority"]
+        )
+
+        new_description = (
+            description
+            if description is not None
+            else existing["description"]
+        )
+
+        updated_at = datetime.now(
+            timezone.utc
+        ).isoformat()
+
+        connection.execute(
+            """
+            UPDATE server_objectives
+            SET
+                status = ?,
+                priority = ?,
+                description = ?,
+                updated_at = ?
+            WHERE id = ?
+            AND guild_id = ?
+            """,
+            (
+                new_status,
+                new_priority,
+                new_description,
+                updated_at,
+                objective_id,
+                guild_id,
+            ),
+        )
+
+        connection.commit()
+
+        return True
+
+    finally:
+
+        connection.close()
+
+
+def delete_objective(
+    objective_id: int,
+    guild_id: int,
+):
+    connection = get_connection()
+
+    try:
+
+        cursor = connection.execute(
+            """
+            DELETE FROM server_objectives
+            WHERE id = ?
+            AND guild_id = ?
+            """,
+            (
+                objective_id,
+                guild_id,
+            ),
+        )
+
+        connection.commit()
+
+        return cursor.rowcount > 0
+
+    finally:
+
+        connection.close()
+
+
+def save_objective_assessment(
+    objective_id: int,
+    guild_id: int,
+    status: str,
+    assessment: str,
+    evidence: str,
+):
+    connection = get_connection()
+
+    try:
+
+        now = datetime.now(
+            timezone.utc
+        ).isoformat()
+
+        cursor = connection.execute(
+            """
+            INSERT INTO objective_assessments (
+                objective_id,
+                guild_id,
+                status,
+                assessment,
+                evidence,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                objective_id,
+                guild_id,
+                status,
+                assessment,
+                evidence,
+                now,
+            ),
+        )
+
+        connection.commit()
+
+        return cursor.lastrowid
+
+    finally:
+
+        connection.close()
+
+
+def get_objective_assessments(
+    objective_id: int,
+    guild_id: int,
+    limit: int = 10,
+):
+    connection = get_connection()
+
+    try:
+
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                objective_id,
+                guild_id,
+                status,
+                assessment,
+                evidence,
+                created_at
+            FROM objective_assessments
+            WHERE objective_id = ?
+            AND guild_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (
+                objective_id,
+                guild_id,
+                limit,
+            ),
+        ).fetchall()
+
+        return [
+            dict(row)
+            for row in rows
+        ]
+
+    finally:
+
+        connection.close()
+
+
+def get_latest_objective_assessment(
+    objective_id: int,
+    guild_id: int,
+):
+    connection = get_connection()
+
+    try:
+
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                objective_id,
+                guild_id,
+                status,
+                assessment,
+                evidence,
+                created_at
+            FROM objective_assessments
+            WHERE objective_id = ?
+            AND guild_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (
+                objective_id,
+                guild_id,
+            ),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return dict(
+            row
+        )
 
     finally:
 
