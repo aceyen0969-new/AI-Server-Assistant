@@ -1,265 +1,466 @@
 import json
 
-from analytics.reporter import build_activity_report
-from ai.provider_router import ask_with_fallback
+from analytics.reporter import (
+    build_activity_report,
+)
+
+from analytics.database import (
+    get_previous_analysis_report,
+    record_analysis_report,
+)
+
+from ai.provider_router import (
+    ask_with_fallback,
+)
+
+
+def calculate_percentage_change(
+    current: int,
+    previous: int,
+):
+    if previous == 0:
+
+        if current == 0:
+            return 0.0
+
+        return None
+
+    return round(
+        (
+            (current - previous)
+            / previous
+        ) * 100,
+        2,
+    )
+
+
+def build_historical_comparison(
+    current_report: dict,
+    previous_report: dict | None,
+):
+    if previous_report is None:
+
+        return {
+            "available": False,
+            "message": "No previous analysis report is available.",
+        }
+
+    previous_messages = previous_report.get(
+        "total_messages",
+        0,
+    )
+
+    previous_members = previous_report.get(
+        "unique_members",
+        0,
+    )
+
+    current_messages = current_report.get(
+        "total_messages",
+        0,
+    )
+
+    current_members = current_report.get(
+        "unique_members",
+        0,
+    )
+
+    return {
+        "available": True,
+        "previous_report_id": previous_report.get(
+            "id"
+        ),
+        "previous_created_at": previous_report.get(
+            "created_at"
+        ),
+        "previous_period_days": previous_report.get(
+            "period_days"
+        ),
+        "previous_total_messages": previous_messages,
+        "previous_unique_members": previous_members,
+        "current_total_messages": current_messages,
+        "current_unique_members": current_members,
+        "message_change_percent": calculate_percentage_change(
+            current_messages,
+            previous_messages,
+        ),
+        "member_change_percent": calculate_percentage_change(
+            current_members,
+            previous_members,
+        ),
+    }
 
 
 def build_analysis_prompt(
     report: dict,
-) -> str:
-    """Build the prompt used by the AI server analyst."""
-
-    report_json = json.dumps(
-        report,
-        indent=2,
-    )
-
-    period_days = report.get(
-        "period_days",
-        7,
-    )
-
+    historical_comparison: dict,
+):
     return f"""
-You are the analytics analyst for a Discord server management assistant.
+You are an analytics AI for a Discord server.
 
-Your job is to analyze server activity data and identify
-useful observations and possible improvements.
+Analyze the provided server activity data.
 
-You are NOT allowed to perform Discord actions.
+Your job is to identify useful, evidence-based patterns and recommend conservative improvements.
 
-You are NOT allowed to invent activity data.
+The server activity data does not contain message content.
 
-Only make conclusions supported by the provided report.
+Current report:
 
-REPORTING PERIOD:
-The following data covers the last {period_days} days.
+{json.dumps(report, indent=2)}
 
-SERVER ACTIVITY REPORT:
-{report_json}
+Historical comparison:
 
-Analyze:
+{json.dumps(historical_comparison, indent=2)}
 
-1. Overall server activity.
-2. Daily activity trends.
-3. Which days are busiest and quietest.
-4. Which channels are most or least active.
-5. Member participation.
-6. Activity patterns by hour.
-7. Calculated server metrics.
-8. Potential organizational improvements.
-9. Potential issues that the server owner may want to investigate.
+Rules:
 
-CALCULATED METRICS:
+1. Only make claims supported by the provided data.
+2. Do not invent information.
+3. Do not infer what users discussed.
+4. Do not infer user opinions or emotions.
+5. Do not identify users by name.
+6. Treat user IDs as anonymous identifiers.
+7. Do not recommend structural server changes from extremely small datasets.
+8. If total messages are fewer than 10, avoid structural or actionable proposals.
+9. If fewer than 3 unique members are active, avoid structural or actionable proposals.
+10. When data is insufficient, prefer monitoring and collecting more data.
+11. Do not treat a single-day spike as proof of a long-term trend.
+12. The daily_trend value was calculated by Python and should be treated as a supporting metric, not absolute proof.
+13. A historical comparison is only available when available is true.
+14. Do not claim growth or decline when the previous value was zero unless the current data clearly supports describing it as new activity.
+15. Percentage changes are calculated by Python and should be treated as supporting evidence.
+16. Do not recommend creating, deleting, renaming, or reorganizing channels unless the available evidence strongly supports the recommendation.
+17. Supported automatic proposal action:
+    - create_channel
+18. If there is no strong actionable recommendation, set action to null.
+19. Prefer a small number of high-quality observations over many repetitive observations.
+20. Keep proposals conservative.
+21. Never execute actions.
+22. Never output anything outside the required JSON object.
 
-The Python analytics system has already calculated
-objective metrics from the activity data.
-
-Use these metrics as factual evidence:
-
-- average_messages_per_member
-- busiest_channel
-- busiest_hour
-- busiest_day
-- daily_trend
-
-Do not recalculate these values yourself unless necessary
-to explain them.
-
-DAILY ACTIVITY ANALYSIS:
-
-The daily_activity field contains one entry for every day
-in the reporting period, including days with zero messages.
-
-Use the complete daily_activity timeline together with
-the daily_trend metric.
-
-The Python system calculates daily_trend by dividing the
-reporting period into an earlier period and a more recent
-period and comparing their total message activity.
-
-Interpret the trend as follows:
-
-- "insufficient_data" means there are not enough daily
-  data points to make a meaningful comparison.
-- "no_activity" means there was no recorded activity
-  during the reporting period.
-- "increasing" means the recent period had substantially
-  more activity than the earlier period.
-- "decreasing" means the recent period had substantially
-  less activity than the earlier period.
-- "stable" means the activity difference between the
-  earlier and recent periods was relatively small.
-
-The current trend thresholds are:
-
-- increasing: recent activity is at least 25% higher
-  than earlier activity.
-- decreasing: recent activity is at least 25% lower
-  than earlier activity.
-- stable: the difference is less than 25%.
-
-Do not claim that a trend is a long-term server-wide
-pattern unless the reporting period contains enough
-historical data to support that conclusion.
-
-IMPORTANT:
-
-- Do not assume why a member behaves a certain way.
-- Do not make personal judgments about members.
-- Do not recommend actions based solely on one member.
-- Do not expose message contents because message contents
-  are not provided.
-- Clearly distinguish observations from recommendations.
-- Recommendations are suggestions only.
-- Never perform an action yourself.
-- A small amount of data may not be enough to make a
-  strong conclusion.
-- Avoid presenting temporary activity as a long-term trend.
-- State when more data is needed.
-- Do not invent dates, message counts, users, channels,
-  or activity patterns.
-- Use the exact evidence provided in the report.
-- Zero-activity days are meaningful evidence and should
-  not be ignored.
-
-DATA SUFFICIENCY AND ACTION SAFETY:
-
-Be conservative when the dataset is small.
-
-Do not generate structural or actionable proposals when
-the reporting period contains fewer than 10 total messages.
-
-Do not generate structural or actionable proposals when
-fewer than 3 unique members are active.
-
-When either threshold is not met, prefer a monitoring or
-data-collection proposal with:
-
-"action": null
-
-Do not recommend creating, deleting, renaming, or
-reorganizing channels based on very limited activity.
-
-Actionable proposals should require enough evidence that
-the proposed Discord change is reasonably justified.
-
-For example, if the report contains only 4 messages from
-1 member, do not recommend creating new channels merely
-because the existing activity occurred in one channel.
-
-Instead, recommend continued monitoring or collecting
-more activity data.
-
-ACTIONABLE PROPOSALS:
-
-Some proposals may be executable by the Discord bot.
-
-Only create an action object when the proposal describes
-a specific Discord change that the bot could perform AND
-the available activity data provides enough evidence to
-justify that change.
-
-Currently supported proposal actions are:
-
-1. create_channel
-
-For create_channel, use this structure:
+Return exactly this JSON structure:
 
 {{
-    "action": "create_channel",
-    "name": "channel-name",
-    "channel_type": "text"
-}}
-
-The channel_type must be either "text" or "voice".
-
-If a proposal is only advice, monitoring, engagement strategy,
-or something that the bot cannot directly execute, set:
-
-"action": null
-
-Do NOT invent channel names based on activity data unless
-the proposal clearly supports the suggested name.
-
-Do NOT create actions for proposals that are not supported
-by the available action types.
-
-Return ONLY valid JSON using this structure:
-
-{{
-    "summary": "Short summary of the server's activity.",
+    "summary": "Short overall summary.",
     "observations": [
         {{
             "title": "Observation title",
-            "description": "What the data shows.",
-            "evidence": "Specific evidence from the report."
+            "description": "Evidence-based explanation.",
+            "evidence": "Specific data supporting the observation."
         }}
     ],
     "proposals": [
         {{
             "title": "Proposal title",
-            "description": "What the server owner could consider doing.",
+            "description": "What could be improved.",
             "reason": "Why the data supports this proposal.",
             "action": null
         }}
     ]
 }}
-
-For an actionable proposal:
-
-{{
-    "title": "Create a gaming channel",
-    "description": "Create a dedicated channel for gaming discussions.",
-    "reason": "The activity data provides enough evidence that a dedicated gaming channel would be useful.",
-    "action": {{
-        "action": "create_channel",
-        "name": "gaming",
-        "channel_type": "text"
-    }}
-}}
-
-For a non-actionable proposal:
-
-{{
-    "title": "Collect more activity data",
-    "description": "Continue monitoring activity over a longer period before drawing strong conclusions.",
-    "reason": "There is not enough activity data to justify a structural server change.",
-    "action": null
-}}
-
-If there are not enough data points to make a useful
-observation or proposal, return an empty list instead.
 """
+
+
+def validate_analysis(
+    analysis,
+):
+    if not isinstance(
+        analysis,
+        dict,
+    ):
+        return False
+
+    if not isinstance(
+        analysis.get("summary"),
+        str,
+    ):
+        return False
+
+    if not isinstance(
+        analysis.get("observations"),
+        list,
+    ):
+        return False
+
+    if not isinstance(
+        analysis.get("proposals"),
+        list,
+    ):
+        return False
+
+    return True
+
+
+def print_analysis_result(
+    provider_name: str,
+    report: dict,
+    analysis: dict,
+    historical_comparison: dict,
+):
+    print()
+    print("========================================")
+    print("         ANALYTICS ANALYSIS")
+    print("========================================")
+
+    print()
+    print(
+        f"Reporting period: {report['period_days']} days"
+    )
+
+    print(
+        f"AI provider: {provider_name}"
+    )
+
+    print()
+    print("CURRENT ACTIVITY")
+    print(
+        f"  Messages: {report['total_messages']}"
+    )
+    print(
+        f"  Active members: {report['unique_members']}"
+    )
+
+    metrics = report.get(
+        "metrics",
+        {},
+    )
+
+    busiest_channel = metrics.get(
+        "busiest_channel"
+    )
+
+    if busiest_channel:
+
+        print(
+            "  Busiest channel: "
+            f"{busiest_channel.get('channel_id')}"
+        )
+
+        print(
+            "  Channel messages: "
+            f"{busiest_channel.get('message_count')}"
+        )
+
+    busiest_day = metrics.get(
+        "busiest_day"
+    )
+
+    if busiest_day:
+
+        print(
+            "  Busiest day: "
+            f"{busiest_day.get('date')}"
+        )
+
+        print(
+            "  Day messages: "
+            f"{busiest_day.get('message_count')}"
+        )
+
+    busiest_hour = metrics.get(
+        "busiest_hour"
+    )
+
+    if busiest_hour:
+
+        print(
+            "  Busiest hour: "
+            f"{busiest_hour.get('hour')}:00 UTC"
+        )
+
+    print(
+        "  Activity trend: "
+        f"{metrics.get('daily_trend', 'unknown')}"
+    )
+
+    print()
+    print("HISTORICAL COMPARISON")
+
+    if historical_comparison.get(
+        "available"
+    ):
+
+        print(
+            "  Previous report ID: "
+            f"{historical_comparison.get('previous_report_id')}"
+        )
+
+        print(
+            "  Previous messages: "
+            f"{historical_comparison.get('previous_total_messages')}"
+        )
+
+        print(
+            "  Current messages: "
+            f"{historical_comparison.get('current_total_messages')}"
+        )
+
+        print(
+            "  Message change: "
+            f"{historical_comparison.get('message_change_percent')}%"
+        )
+
+        print(
+            "  Previous members: "
+            f"{historical_comparison.get('previous_unique_members')}"
+        )
+
+        print(
+            "  Current members: "
+            f"{historical_comparison.get('current_unique_members')}"
+        )
+
+        print(
+            "  Member change: "
+            f"{historical_comparison.get('member_change_percent')}%"
+        )
+
+    else:
+
+        print(
+            "  No previous report available."
+        )
+
+    print()
+    print("AI SUMMARY")
+    print(
+        f"  {analysis.get('summary', 'No summary provided.')}"
+    )
+
+    observations = analysis.get(
+        "observations",
+        [],
+    )
+
+    print()
+    print(
+        f"OBSERVATIONS ({len(observations)})"
+    )
+
+    for index, observation in enumerate(
+        observations,
+        start=1,
+    ):
+
+        if not isinstance(
+            observation,
+            dict,
+        ):
+            continue
+
+        title = observation.get(
+            "title",
+            "Observation",
+        )
+
+        description = observation.get(
+            "description",
+            "",
+        )
+
+        evidence = observation.get(
+            "evidence",
+            "",
+        )
+
+        print()
+        print(
+            f"  {index}. {title}"
+        )
+
+        print(
+            f"     {description}"
+        )
+
+        if evidence:
+
+            print(
+                f"     Evidence: {evidence}"
+            )
+
+    proposals = analysis.get(
+        "proposals",
+        [],
+    )
+
+    print()
+    print(
+        f"PROPOSALS ({len(proposals)})"
+    )
+
+    for index, proposal in enumerate(
+        proposals,
+        start=1,
+    ):
+
+        if not isinstance(
+            proposal,
+            dict,
+        ):
+            continue
+
+        title = proposal.get(
+            "title",
+            "Proposal",
+        )
+
+        description = proposal.get(
+            "description",
+            "",
+        )
+
+        action = proposal.get(
+            "action"
+        )
+
+        print()
+        print(
+            f"  {index}. {title}"
+        )
+
+        print(
+            f"     {description}"
+        )
+
+        print(
+            f"     Action: {action}"
+        )
+
+    print()
+    print("========================================")
+    print()
 
 
 async def analyze_server(
     guild_id: int,
     days: int = 7,
 ):
-    """Analyze server activity using the AI provider system."""
-
     report = build_activity_report(
         guild_id,
         days,
     )
 
+    previous_report = get_previous_analysis_report(
+        guild_id
+    )
+
+    historical_comparison = build_historical_comparison(
+        report,
+        previous_report,
+    )
+
     prompt = build_analysis_prompt(
-        report
+        report,
+        historical_comparison,
     )
 
-    print(
-        "========== ANALYTICS ANALYSIS =========="
+    provider_name, raw_response = (
+        await ask_with_fallback(
+            prompt
+        )
     )
 
-    print(
-        f"Reporting period: {days} day(s)"
-    )
-
-    provider_name, result = await ask_with_fallback(
-        prompt
-    )
-
-    if result is None:
+    if raw_response is None:
 
         print(
             "ANALYTICS: All AI providers failed."
@@ -269,6 +470,7 @@ async def analyze_server(
             "provider": None,
             "report": report,
             "analysis": None,
+            "historical_comparison": historical_comparison,
         }
 
     print(
@@ -278,54 +480,66 @@ async def analyze_server(
     try:
 
         analysis = json.loads(
-            result
+            raw_response
         )
 
-    except (
-        json.JSONDecodeError,
-        TypeError,
-    ) as e:
+    except json.JSONDecodeError:
 
         print(
-            "ANALYTICS JSON ERROR:"
+            "ANALYTICS: AI returned invalid JSON."
         )
 
         print(
-            repr(e)
-        )
-
-        print(
-            "RAW RESPONSE:"
-        )
-
-        print(
-            result
+            raw_response
         )
 
         return {
             "provider": provider_name,
             "report": report,
             "analysis": None,
+            "historical_comparison": historical_comparison,
         }
 
-    if not isinstance(
-        analysis,
-        dict,
+    if not validate_analysis(
+        analysis
     ):
 
         print(
-            "ANALYTICS ERROR: "
-            "AI response was not a JSON object."
+            "ANALYTICS: AI analysis failed validation."
         )
 
         return {
             "provider": provider_name,
             "report": report,
             "analysis": None,
+            "historical_comparison": historical_comparison,
         }
+
+    record_analysis_report(
+        guild_id=guild_id,
+        period_days=days,
+        total_messages=report["total_messages"],
+        unique_members=report["unique_members"],
+        provider=provider_name,
+        analysis_json=json.dumps(
+            analysis
+        ),
+    )
+
+    print(
+        "ANALYTICS: Analysis report saved."
+    )
+
+    print_analysis_result(
+        provider_name=provider_name,
+        report=report,
+        analysis=analysis,
+        historical_comparison=historical_comparison,
+    )
 
     return {
         "provider": provider_name,
         "report": report,
         "analysis": analysis,
+        "historical_comparison": historical_comparison,
     }

@@ -10,8 +10,6 @@ DATABASE_PATH = (
 
 
 def get_connection():
-    """Create a connection to the analytics database."""
-
     connection = sqlite3.connect(
         DATABASE_PATH
     )
@@ -22,8 +20,6 @@ def get_connection():
 
 
 def initialize_database():
-    """Create the analytics tables if they do not exist."""
-
     connection = get_connection()
 
     try:
@@ -40,6 +36,21 @@ def initialize_database():
             """
         )
 
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS analysis_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                period_days INTEGER NOT NULL,
+                total_messages INTEGER NOT NULL,
+                unique_members INTEGER NOT NULL,
+                provider TEXT,
+                analysis_json TEXT NOT NULL
+            )
+            """
+        )
+
         connection.commit()
 
     finally:
@@ -50,8 +61,6 @@ def initialize_database():
 def get_start_time(
     days: int,
 ):
-    """Return the UTC timestamp for the beginning of a time window."""
-
     now = datetime.now(
         timezone.utc
     )
@@ -69,8 +78,6 @@ def record_message(
     user_id: int,
     created_at: str,
 ):
-    """Record one Discord message as an activity event."""
-
     connection = get_connection()
 
     try:
@@ -100,12 +107,135 @@ def record_message(
         connection.close()
 
 
+def record_analysis_report(
+    guild_id: int,
+    period_days: int,
+    total_messages: int,
+    unique_members: int,
+    provider: str | None,
+    analysis_json: str,
+):
+    connection = get_connection()
+
+    try:
+
+        connection.execute(
+            """
+            INSERT INTO analysis_reports (
+                guild_id,
+                created_at,
+                period_days,
+                total_messages,
+                unique_members,
+                provider,
+                analysis_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                guild_id,
+                datetime.now(
+                    timezone.utc
+                ).isoformat(),
+                period_days,
+                total_messages,
+                unique_members,
+                provider,
+                analysis_json,
+            ),
+        )
+
+        connection.commit()
+
+    finally:
+
+        connection.close()
+
+
+def get_analysis_reports(
+    guild_id: int,
+    limit: int = 10,
+):
+    connection = get_connection()
+
+    try:
+
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                guild_id,
+                created_at,
+                period_days,
+                total_messages,
+                unique_members,
+                provider,
+                analysis_json
+            FROM analysis_reports
+            WHERE guild_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (
+                guild_id,
+                limit,
+            ),
+        ).fetchall()
+
+        return [
+            dict(row)
+            for row in rows
+        ]
+
+    finally:
+
+        connection.close()
+
+
+def get_previous_analysis_report(
+    guild_id: int,
+):
+    connection = get_connection()
+
+    try:
+
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                guild_id,
+                created_at,
+                period_days,
+                total_messages,
+                unique_members,
+                provider,
+                analysis_json
+            FROM analysis_reports
+            WHERE guild_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (
+                guild_id,
+            ),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return dict(
+            row
+        )
+
+    finally:
+
+        connection.close()
+
+
 def get_message_count(
     guild_id: int,
     days: int | None = None,
 ):
-    """Return the number of messages in a time window."""
-
     connection = get_connection()
 
     try:
@@ -151,8 +281,6 @@ def get_unique_member_count(
     guild_id: int,
     days: int | None = None,
 ):
-    """Return unique active members in a time window."""
-
     connection = get_connection()
 
     try:
@@ -198,8 +326,6 @@ def get_channel_activity(
     guild_id: int,
     days: int | None = None,
 ):
-    """Return message counts grouped by channel."""
-
     connection = get_connection()
 
     try:
@@ -259,8 +385,6 @@ def get_member_activity(
     guild_id: int,
     days: int | None = None,
 ):
-    """Return message counts grouped by member."""
-
     connection = get_connection()
 
     try:
@@ -320,8 +444,6 @@ def get_hourly_activity(
     guild_id: int,
     days: int | None = None,
 ):
-    """Return message counts grouped by UTC hour."""
-
     connection = get_connection()
 
     try:
@@ -381,8 +503,6 @@ def get_daily_activity(
     guild_id: int,
     days: int = 7,
 ):
-    """Return message counts for every UTC date in the time window."""
-
     connection = get_connection()
 
     try:
