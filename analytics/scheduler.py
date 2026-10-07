@@ -8,7 +8,7 @@ from analytics.proposals import (
 )
 
 
-ANALYTICS_INTERVAL = 60
+ANALYTICS_INTERVAL = 86400
 
 
 async def run_analytics_cycle(
