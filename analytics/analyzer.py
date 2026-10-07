@@ -52,7 +52,7 @@ Analyze:
 CALCULATED METRICS:
 
 The Python analytics system has already calculated
-objective metrics from the raw activity data.
+objective metrics from the activity data.
 
 Use these metrics as factual evidence:
 
@@ -67,25 +67,40 @@ to explain them.
 
 DAILY ACTIVITY ANALYSIS:
 
-Use the daily_activity data together with the
-daily_trend metric.
+The daily_activity field contains one entry for every day
+in the reporting period, including days with zero messages.
 
-Interpret the trend carefully:
+Use the complete daily_activity timeline together with
+the daily_trend metric.
 
-- "insufficient_data" means there is not enough data
-  to determine a meaningful trend.
-- "increasing" means the available daily data shows
-  activity increasing from the earliest recorded day
-  to the latest recorded day.
-- "decreasing" means the available daily data shows
-  activity decreasing from the earliest recorded day
-  to the latest recorded day.
-- "stable" means the earliest and latest recorded
-  activity levels are equal.
+The Python system calculates daily_trend by dividing the
+reporting period into an earlier period and a more recent
+period and comparing their total message activity.
+
+Interpret the trend as follows:
+
+- "insufficient_data" means there are not enough daily
+  data points to make a meaningful comparison.
+- "no_activity" means there was no recorded activity
+  during the reporting period.
+- "increasing" means the recent period had substantially
+  more activity than the earlier period.
+- "decreasing" means the recent period had substantially
+  less activity than the earlier period.
+- "stable" means the activity difference between the
+  earlier and recent periods was relatively small.
+
+The current trend thresholds are:
+
+- increasing: recent activity is at least 25% higher
+  than earlier activity.
+- decreasing: recent activity is at least 25% lower
+  than earlier activity.
+- stable: the difference is less than 25%.
 
 Do not claim that a trend is a long-term server-wide
 pattern unless the reporting period contains enough
-activity data to support that conclusion.
+historical data to support that conclusion.
 
 IMPORTANT:
 
@@ -104,13 +119,45 @@ IMPORTANT:
 - Do not invent dates, message counts, users, channels,
   or activity patterns.
 - Use the exact evidence provided in the report.
+- Zero-activity days are meaningful evidence and should
+  not be ignored.
+
+DATA SUFFICIENCY AND ACTION SAFETY:
+
+Be conservative when the dataset is small.
+
+Do not generate structural or actionable proposals when
+the reporting period contains fewer than 10 total messages.
+
+Do not generate structural or actionable proposals when
+fewer than 3 unique members are active.
+
+When either threshold is not met, prefer a monitoring or
+data-collection proposal with:
+
+"action": null
+
+Do not recommend creating, deleting, renaming, or
+reorganizing channels based on very limited activity.
+
+Actionable proposals should require enough evidence that
+the proposed Discord change is reasonably justified.
+
+For example, if the report contains only 4 messages from
+1 member, do not recommend creating new channels merely
+because the existing activity occurred in one channel.
+
+Instead, recommend continued monitoring or collecting
+more activity data.
 
 ACTIONABLE PROPOSALS:
 
 Some proposals may be executable by the Discord bot.
 
 Only create an action object when the proposal describes
-a specific Discord change that the bot could perform.
+a specific Discord change that the bot could perform AND
+the available activity data provides enough evidence to
+justify that change.
 
 Currently supported proposal actions are:
 
@@ -163,7 +210,7 @@ For an actionable proposal:
 {{
     "title": "Create a gaming channel",
     "description": "Create a dedicated channel for gaming discussions.",
-    "reason": "The server would benefit from a dedicated space for this activity.",
+    "reason": "The activity data provides enough evidence that a dedicated gaming channel would be useful.",
     "action": {{
         "action": "create_channel",
         "name": "gaming",
@@ -175,8 +222,8 @@ For a non-actionable proposal:
 
 {{
     "title": "Collect more activity data",
-    "description": "Continue monitoring activity before drawing conclusions.",
-    "reason": "There is not enough data to establish a reliable trend.",
+    "description": "Continue monitoring activity over a longer period before drawing strong conclusions.",
+    "reason": "There is not enough activity data to justify a structural server change.",
     "action": null
 }}
 

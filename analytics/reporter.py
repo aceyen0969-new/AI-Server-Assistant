@@ -49,26 +49,60 @@ def calculate_metrics(
             key=lambda item: item["message_count"],
         )
 
+    # ========================================
+    # DAILY ACTIVITY TREND
+    # ========================================
+
     if len(daily_activity) < 2:
 
         daily_trend = "insufficient_data"
 
     else:
 
-        first_day = daily_activity[0]["message_count"]
-        last_day = daily_activity[-1]["message_count"]
+        midpoint = len(daily_activity) // 2
 
-        if last_day > first_day:
+        first_period = daily_activity[:midpoint]
+        second_period = daily_activity[midpoint:]
+
+        first_total = sum(
+            day["message_count"]
+            for day in first_period
+        )
+
+        second_total = sum(
+            day["message_count"]
+            for day in second_period
+        )
+
+        if first_total == 0 and second_total == 0:
+
+            daily_trend = "no_activity"
+
+        elif first_total == 0:
 
             daily_trend = "increasing"
 
-        elif last_day < first_day:
+        elif second_total == 0:
 
             daily_trend = "decreasing"
 
         else:
 
-            daily_trend = "stable"
+            change_ratio = (
+                second_total - first_total
+            ) / first_total
+
+            if change_ratio >= 0.25:
+
+                daily_trend = "increasing"
+
+            elif change_ratio <= -0.25:
+
+                daily_trend = "decreasing"
+
+            else:
+
+                daily_trend = "stable"
 
     return {
         "average_messages_per_member": round(

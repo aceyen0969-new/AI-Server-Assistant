@@ -27,6 +27,7 @@ def initialize_database():
     connection = get_connection()
 
     try:
+
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS message_activity (
@@ -42,6 +43,7 @@ def initialize_database():
         connection.commit()
 
     finally:
+
         connection.close()
 
 
@@ -72,6 +74,7 @@ def record_message(
     connection = get_connection()
 
     try:
+
         connection.execute(
             """
             INSERT INTO message_activity (
@@ -93,6 +96,7 @@ def record_message(
         connection.commit()
 
     finally:
+
         connection.close()
 
 
@@ -139,6 +143,7 @@ def get_message_count(
         return result["count"]
 
     finally:
+
         connection.close()
 
 
@@ -185,6 +190,7 @@ def get_unique_member_count(
         return result["count"]
 
     finally:
+
         connection.close()
 
 
@@ -245,6 +251,7 @@ def get_channel_activity(
         ]
 
     finally:
+
         connection.close()
 
 
@@ -305,6 +312,7 @@ def get_member_activity(
         ]
 
     finally:
+
         connection.close()
 
 
@@ -365,13 +373,15 @@ def get_hourly_activity(
         ]
 
     finally:
+
         connection.close()
+
 
 def get_daily_activity(
     guild_id: int,
     days: int = 7,
 ):
-    """Return message counts grouped by UTC date."""
+    """Return message counts for every UTC date in the time window."""
 
     connection = get_connection()
 
@@ -398,13 +408,45 @@ def get_daily_activity(
             ),
         ).fetchall()
 
-        return [
-            {
-                "date": row["date"],
-                "message_count": row["message_count"],
-            }
+        activity_by_date = {
+            row["date"]: row["message_count"]
             for row in rows
-        ]
+        }
+
+        now = datetime.now(
+            timezone.utc
+        )
+
+        start_date = (
+            now - timedelta(
+                days=days - 1
+            )
+        ).date()
+
+        results = []
+
+        for offset in range(days):
+
+            current_date = (
+                start_date
+                + timedelta(
+                    days=offset
+                )
+            )
+
+            date_string = current_date.isoformat()
+
+            results.append(
+                {
+                    "date": date_string,
+                    "message_count": activity_by_date.get(
+                        date_string,
+                        0,
+                    ),
+                }
+            )
+
+        return results
 
     finally:
 
