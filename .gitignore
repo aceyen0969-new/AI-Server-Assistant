@@ -2,4 +2,4 @@
 __pycache__/
 *.pyc
 venv/
-.venv/
+.venv/analytics/analytics.db
