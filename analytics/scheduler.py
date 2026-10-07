@@ -23,6 +23,7 @@ async def run_analytics_cycle(
     result = await analyze_server(
         guild.id,
         days=7,
+        guild=guild,
     )
 
     analysis = result.get(

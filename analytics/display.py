@@ -1,5 +1,9 @@
+import discord
+
+
 def print_activity_report(
     report: dict,
+    guild: discord.Guild | None = None,
 ):
     metrics = report.get(
         "metrics",
@@ -39,9 +43,25 @@ def print_activity_report(
 
     if busiest_channel:
 
+        channel_id = busiest_channel.get(
+            "channel_id"
+        )
+
+        channel_name = f"#{channel_id}"
+
+        if guild is not None:
+
+            channel = guild.get_channel(
+                channel_id
+            )
+
+            if channel is not None:
+
+                channel_name = f"#{channel.name}"
+
         print(
             "  Busiest channel: "
-            f"{busiest_channel.get('channel_id')}"
+            f"{channel_name}"
         )
 
         print(
@@ -77,13 +97,13 @@ def print_activity_report(
         )
 
     trend_labels = {
-        "increasing": "📈 Increasing",
-        "decreasing": "📉 Decreasing",
-        "stable": "➡️ Stable",
-        "sporadic": "⚡ Sporadic",
-        "insufficient_data": "⚠️ Insufficient data",
-        "no_activity": "⚪ No activity",
-        "unknown": "❓ Unknown",
+        "increasing": "Increasing",
+        "decreasing": "Decreasing",
+        "stable": "Stable",
+        "sporadic": "Sporadic",
+        "insufficient_data": "Insufficient data",
+        "no_activity": "No activity",
+        "unknown": "Unknown",
     }
 
     daily_trend = metrics.get(
@@ -93,7 +113,7 @@ def print_activity_report(
 
     print(
         "  Activity trend: "
-        f"{trend_labels.get(daily_trend, '❓ Unknown')}"
+        f"{trend_labels.get(daily_trend, 'Unknown')}"
     )
 
     print()

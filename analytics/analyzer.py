@@ -217,9 +217,11 @@ def print_analysis_result(
 
     print()
     print("CURRENT ACTIVITY")
+
     print(
         f"  Messages: {report['total_messages']}"
     )
+
     print(
         f"  Active members: {report['unique_members']}"
     )
@@ -273,18 +275,18 @@ def print_analysis_result(
         )
 
     trend_labels = {
-        "increasing": "📈 Increasing",
-        "decreasing": "📉 Decreasing",
-        "stable": "➡️ Stable",
-        "sporadic": "⚡ Sporadic",
-        "insufficient_data": "⚠️ Insufficient data",
-        "no_activity": "⚪ No activity",
-        "unknown": "❓ Unknown",
+        "increasing": "Increasing",
+        "decreasing": "Decreasing",
+        "stable": "Stable",
+        "sporadic": "Sporadic",
+        "insufficient_data": "Insufficient data",
+        "no_activity": "No activity",
+        "unknown": "Unknown",
     }
 
     print(
         "  Activity trend: "
-        f"{trend_labels.get(metrics.get('daily_trend', 'unknown'), '❓ Unknown')}"
+        f"{trend_labels.get(metrics.get('daily_trend', 'unknown'), 'Unknown')}"
     )
 
     print()
@@ -337,6 +339,7 @@ def print_analysis_result(
 
     print()
     print("AI SUMMARY")
+
     print(
         f"  {analysis.get('summary', 'No summary provided.')}"
     )
@@ -448,6 +451,7 @@ def print_analysis_result(
 async def analyze_server(
     guild_id: int,
     days: int = 7,
+    guild=None,
 ):
     report = build_activity_report(
         guild_id,
@@ -455,7 +459,8 @@ async def analyze_server(
     )
 
     print_activity_report(
-        report
+        report,
+        guild,
     )
 
     previous_report = get_previous_analysis_report(
