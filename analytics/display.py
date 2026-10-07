@@ -8,32 +8,30 @@ def print_activity_report(
 
     print()
     print("========================================")
-    print("         SERVER ACTIVITY REPORT")
+    print("          QUASAR ANALYTICS")
     print("========================================")
-    print()
 
+    print()
+    print("REPORTING PERIOD")
     print(
-        f"Reporting period: {report.get('period_days', '?')} days"
+        f"  Last {report.get('period_days', '?')} days"
     )
 
     print()
-    print("CURRENT ACTIVITY")
-
+    print("ACTIVITY")
     print(
         f"  Messages: {report.get('total_messages', 0)}"
     )
-
     print(
         f"  Active members: {report.get('unique_members', 0)}"
     )
-
-    print()
-    print("ACTIVITY METRICS")
-
     print(
         "  Avg. messages / member: "
         f"{metrics.get('average_messages_per_member', 0)}"
     )
+
+    print()
+    print("PEAK ACTIVITY")
 
     busiest_channel = metrics.get(
         "busiest_channel"
