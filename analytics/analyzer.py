@@ -10,6 +10,7 @@ from analytics.display import (
 
 from analytics.database import (
     get_previous_analysis_report,
+    get_memories,
     record_analysis_report,
     save_memory,
 )
@@ -96,9 +97,59 @@ def build_historical_comparison(
     }
 
 
+def build_memory_context(
+    memories: list,
+):
+    if not memories:
+
+        return {
+            "available": False,
+            "count": 0,
+            "memories": [],
+        }
+
+    memory_items = []
+
+    for memory in memories:
+
+        if not isinstance(
+            memory,
+            dict,
+        ):
+            continue
+
+        memory_items.append(
+            {
+                "memory_type": memory.get(
+                    "memory_type"
+                ),
+                "content": memory.get(
+                    "content"
+                ),
+                "occurrences": memory.get(
+                    "occurrences",
+                    1,
+                ),
+                "created_at": memory.get(
+                    "created_at"
+                ),
+                "last_seen_at": memory.get(
+                    "last_seen_at"
+                ),
+            }
+        )
+
+    return {
+        "available": bool(memory_items),
+        "count": len(memory_items),
+        "memories": memory_items,
+    }
+
+
 def build_analysis_prompt(
     report: dict,
     historical_comparison: dict,
+    memory_context: dict,
 ):
     return f"""
 You are an analytics AI for a Discord server.
@@ -116,6 +167,23 @@ Current report:
 Historical comparison:
 
 {json.dumps(historical_comparison, indent=2)}
+
+Server memory:
+
+{json.dumps(memory_context, indent=2)}
+
+Memory rules:
+
+1. Server memory contains observations from previous analytics runs.
+2. Memories are historical context, not current evidence.
+3. Current report data always has higher priority than memories.
+4. Do not assume an old memory is still true.
+5. Use memories to identify recurring patterns or compare how the server has changed over time.
+6. If current data contradicts a memory, trust the current data.
+7. Do not treat the existence of a memory as proof that its claim is currently true.
+8. Do not invent facts that are not present in the current report, historical comparison, or memories.
+9. Do not infer message content, opinions, emotions, or identities from memories.
+10. Memories do not contain raw message content.
 
 Rules:
 
@@ -535,9 +603,24 @@ async def analyze_server(
         previous_report,
     )
 
+    memories = get_memories(
+        guild_id=guild_id,
+        memory_type="observation",
+        limit=20,
+    )
+
+    memory_context = build_memory_context(
+        memories
+    )
+
+    print(
+        f"ANALYTICS: Loaded {memory_context['count']} memory item(s)."
+    )
+
     prompt = build_analysis_prompt(
         report,
         historical_comparison,
+        memory_context,
     )
 
     provider_name, raw_response = (
