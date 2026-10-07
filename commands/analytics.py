@@ -74,6 +74,11 @@ class Analytics(commands.Cog):
             {},
         )
 
+        historical_comparison = result.get(
+            "historical_comparison",
+            {},
+        )
+
         summary = analysis.get(
             "summary",
             "No summary was provided.",
@@ -188,6 +193,7 @@ class Analytics(commands.Cog):
             "decreasing": "📉 Decreasing",
             "stable": "➡️ Stable",
             "insufficient_data": "⚠️ Insufficient data",
+            "no_activity": "⚪ No activity",
             "unknown": "❓ Unknown",
         }
 
@@ -199,6 +205,94 @@ class Analytics(commands.Cog):
             ),
             inline=True,
         )
+
+        if historical_comparison.get(
+            "available"
+        ):
+
+            message_change = historical_comparison.get(
+                "message_change_percent"
+            )
+
+            member_change = historical_comparison.get(
+                "member_change_percent"
+            )
+
+            previous_messages = historical_comparison.get(
+                "previous_total_messages"
+            )
+
+            previous_members = historical_comparison.get(
+                "previous_unique_members"
+            )
+
+            current_messages = historical_comparison.get(
+                "current_total_messages"
+            )
+
+            current_members = historical_comparison.get(
+                "current_unique_members"
+            )
+
+            if message_change is None:
+
+                message_change_text = "New activity"
+
+            elif message_change > 0:
+
+                message_change_text = (
+                    f"📈 +{message_change}%"
+                )
+
+            elif message_change < 0:
+
+                message_change_text = (
+                    f"📉 {message_change}%"
+                )
+
+            else:
+
+                message_change_text = "➡️ 0%"
+
+            if member_change is None:
+
+                member_change_text = "New activity"
+
+            elif member_change > 0:
+
+                member_change_text = (
+                    f"📈 +{member_change}%"
+                )
+
+            elif member_change < 0:
+
+                member_change_text = (
+                    f"📉 {member_change}%"
+                )
+
+            else:
+
+                member_change_text = "➡️ 0%"
+
+            embed.add_field(
+                name="📈 Message Change",
+                value=(
+                    f"Previous: {previous_messages}\n"
+                    f"Current: {current_messages}\n"
+                    f"Change: {message_change_text}"
+                ),
+                inline=True,
+            )
+
+            embed.add_field(
+                name="👥 Member Change",
+                value=(
+                    f"Previous: {previous_members}\n"
+                    f"Current: {current_members}\n"
+                    f"Change: {member_change_text}"
+                ),
+                inline=True,
+            )
 
         observations = analysis.get(
             "observations",
@@ -300,10 +394,6 @@ class Analytics(commands.Cog):
         await interaction.followup.send(
             embed=embed
         )
-
-        # ========================================
-        # ACTIONABLE PROPOSALS
-        # ========================================
 
         await process_analytics_proposals(
             guild=interaction.guild,
