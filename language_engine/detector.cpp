@@ -207,7 +207,7 @@ double calculate_trigram_score(
 int main() {
 
     std::cout
-        << "Quasar Language Engine v0.6.2"
+        << "Quasar Language Engine v0.6.5"
         << std::endl;
 
     std::map<std::string, int> english_raw =
@@ -286,7 +286,13 @@ int main() {
         "that",
         "and",
         "but",
-        "with"
+        "with",
+        "actually",
+        "think",
+        "going",
+        "school",
+        "server",
+        "working"
     };
 
     std::vector<std::string> filipino_words = {
@@ -309,7 +315,10 @@ int main() {
         "saan",
         "natin",
         "kayo",
-        "kami"
+        "kami",
+        "tayo",
+        "mag",
+        "mamaya"
     };
 
     std::vector<std::string> bisaya_words = {
@@ -429,19 +438,22 @@ int main() {
     int strong_language_count = 0;
 
     if (
-        english_word_score > 0
+        english_word_score > 0 ||
+        english_trigram_score >= 0.04
     ) {
         strong_language_count++;
     }
 
     if (
-        filipino_word_score > 0
+        filipino_word_score > 0 ||
+        filipino_trigram_score >= 0.04
     ) {
         strong_language_count++;
     }
 
     if (
-        bisaya_word_score > 0
+        bisaya_word_score > 0 ||
+        bisaya_trigram_score >= 0.04
     ) {
         strong_language_count++;
     }
@@ -456,8 +468,23 @@ int main() {
     if (
         strong_language_count >= 2
     ) {
-        language = "mixed";
         mixed = true;
+
+        if (
+            english_score >= filipino_score &&
+            english_score >= bisaya_score
+        ) {
+            language = "taglish";
+        }
+        else if (
+            filipino_score >= english_score &&
+            filipino_score >= bisaya_score
+        ) {
+            language = "taglish";
+        }
+        else {
+            language = "mixed";
+        }
     }
     else if (
         highest_score > 0
