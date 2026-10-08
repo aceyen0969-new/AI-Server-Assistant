@@ -773,9 +773,7 @@ void print_json(
 
         std::cout
             << "\"}";
-
-        std::cout << "}";
-    }
+        }
 
     std::cout
         << "]\n";
