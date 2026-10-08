@@ -4,3 +4,4 @@ __pycache__/
 venv/
 .venv/
 analytics/analytics.db
+language_engine/*.exe
