@@ -615,77 +615,73 @@ void print_json(
     const std::vector<LanguageSegment>& segments
 ) {
     std::cout
-        << "{"
-        << "\"language\":\""
+        << "{\n"
+        << "  \"language\": \""
         << language
-        << "\","
-        << "\"mixed\":"
+        << "\",\n"
+        << "  \"mixed\": "
         << (mixed ? "true" : "false")
-        << ","
-        << "\"code_switched\":"
+        << ",\n"
+        << "  \"code_switched\": "
         << (code_switched ? "true" : "false")
-        << ","
-        << "\"ambiguous\":"
+        << ",\n"
+        << "  \"ambiguous\": "
         << (ambiguous ? "true" : "false")
-        << ","
-        << "\"confidence\":"
+        << ",\n"
+        << "  \"confidence\": "
         << confidence
-        << ","
-        << "\"score_margin\":"
+        << ",\n"
+        << "  \"score_margin\": "
         << score_margin
-        << ","
-        << "\"switch_count\":"
+        << ",\n"
+        << "  \"switch_count\": "
         << switch_count
-        << ","
-        << "\"code_switch_direction\":\""
+        << ",\n"
+        << "  \"code_switch_direction\": \""
         << escape_json(
             code_switch_direction
         )
-        << "\","
-        << "\"english_word_score\":"
+        << "\",\n"
+        << "  \"english_word_score\": "
         << english_word_score
-        << ","
-        << "\"filipino_word_score\":"
+        << ",\n"
+        << "  \"filipino_word_score\": "
         << filipino_word_score
-        << ","
-        << "\"bisaya_word_score\":"
+        << ",\n"
+        << "  \"bisaya_word_score\": "
         << bisaya_word_score
-        << ","
-        << "\"english_unique_score\":"
+        << ",\n"
+        << "  \"english_unique_score\": "
         << english_unique_score
-        << ","
-        << "\"filipino_unique_score\":"
+        << ",\n"
+        << "  \"filipino_unique_score\": "
         << filipino_unique_score
-        << ","
-        << "\"bisaya_unique_score\":"
+        << ",\n"
+        << "  \"bisaya_unique_score\": "
         << bisaya_unique_score
-        << ","
-        << "\"english_trigram_score\":"
+        << ",\n"
+        << "  \"english_trigram_score\": "
         << english_trigram_score
-        << ","
-        << "\"filipino_trigram_score\":"
+        << ",\n"
+        << "  \"filipino_trigram_score\": "
         << filipino_trigram_score
-        << ","
-        << "\"bisaya_trigram_score\":"
+        << ",\n"
+        << "  \"bisaya_trigram_score\": "
         << bisaya_trigram_score
-        << ","
-        << "\"segments\":[";
+        << ",\n"
+        << "  \"segments\": [\n";
 
     for (
         std::size_t i = 0;
         i < segments.size();
         ++i
     ) {
-        if (i > 0) {
-            std::cout << ",";
-        }
-
         std::cout
-            << "{"
-            << "\"language\":\""
+            << "    {\n"
+            << "      \"language\": \""
             << segments[i].language
-            << "\","
-            << "\"words\":\"";
+            << "\",\n"
+            << "      \"words\": \"";
 
         for (
             std::size_t j = 0;
@@ -703,12 +699,20 @@ void print_json(
         }
 
         std::cout
-            << "\""
-            << "}";
+            << "\"\n"
+            << "    }";
+
+        if (
+            i + 1 < segments.size()
+        ) {
+            std::cout << ",";
+        }
+
+        std::cout << "\n";
     }
 
     std::cout
-        << "]"
+        << "  ]\n"
         << "}"
         << std::endl;
 }
