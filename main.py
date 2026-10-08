@@ -24,14 +24,18 @@ from analytics import observer
 from analytics.database import initialize_database
 from analytics.scheduler import analytics_scheduler
 
-from language_engine.detector_bridge import detect_message
+from language_engine.detector_bridge import (
+    detect_message,
+    learn_unknown_words,
+)
 
 
 load_dotenv()
 
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-
+DISCORD_TOKEN = os.getenv(
+    "DISCORD_TOKEN"
+)
 
 if not DISCORD_TOKEN:
     raise RuntimeError(
@@ -40,7 +44,6 @@ if not DISCORD_TOKEN:
 
 
 intents = discord.Intents.default()
-
 intents.members = True
 intents.message_content = True
 
@@ -57,25 +60,15 @@ scheduler_task = None
 async def load_features():
 
     await ping.setup(bot)
-
     await serverinfo.setup(bot)
-
     await serverstats.setup(bot)
-
     await channels.setup(bot)
-
     await organize.setup(bot)
-
     await assistant.setup(bot)
-
     await aistatus.setup(bot)
-
     await approvaltest.setup(bot)
-
     await cleanup.setup(bot)
-
     await analytics.setup(bot)
-
     await objective.setup(bot)
 
 
@@ -85,15 +78,12 @@ async def on_ready():
     global scheduler_task
 
     print("----------------------------------------")
-
     print(
         f"Logged in as {bot.user}"
     )
-
     print(
         f"Connected to {len(bot.guilds)} server(s)"
     )
-
     print("----------------------------------------")
 
     try:
@@ -114,11 +104,16 @@ async def on_ready():
 
     except Exception as e:
 
-        print("Command sync error:")
+        print(
+            "Command sync error:"
+        )
 
         print(e)
 
-    if scheduler_task is None or scheduler_task.done():
+    if (
+        scheduler_task is None
+        or scheduler_task.done()
+    ):
 
         print(
             "ANALYTICS SCHEDULER: Starting..."
@@ -136,7 +131,10 @@ async def on_message(message):
         message
     )
 
-    if not message.author.bot and message.content.strip():
+    if (
+        not message.author.bot
+        and message.content.strip()
+    ):
 
         try:
 
@@ -148,6 +146,26 @@ async def on_message(message):
                 "LANGUAGE DETECTOR:",
                 language_result
             )
+
+            unknown_words = (
+                language_result.get(
+                    "unknown_words",
+                    []
+                )
+            )
+
+            if unknown_words:
+
+                learning_results = (
+                    learn_unknown_words(
+                        language_result
+                    )
+                )
+
+                print(
+                    "LANGUAGE LEARNING:",
+                    learning_results
+                )
 
         except Exception as e:
 
@@ -206,6 +224,4 @@ print(
 )
 
 
-asyncio.run(
-    main()
-)
+asyncio.run(main())

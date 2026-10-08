@@ -5,6 +5,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from groq import Groq
 
+from ai.learning_candidates import record_candidate
+
 
 load_dotenv()
 
@@ -148,14 +150,10 @@ Return exactly:
     ):
         confidence = 0.0
 
-    if (
-        result_word != word
-    ):
+    if result_word != word:
         result_word = word
 
-    if (
-        language not in SUPPORTED_LANGUAGES
-    ):
+    if language not in SUPPORTED_LANGUAGES:
         language = "unknown"
 
     if confidence < 0.0:
@@ -200,7 +198,9 @@ def add_word(
             "r",
             encoding="utf-8",
         ) as file:
+
             for line in file:
+
                 existing_word = (
                     line.strip()
                     .lower()
@@ -218,6 +218,7 @@ def add_word(
         "a",
         encoding="utf-8",
     ) as file:
+
         file.write(
             word + "\n"
         )
@@ -243,12 +244,31 @@ def learn_word(
         "confidence"
     ]
 
+    if (
+        language not in LANGUAGE_FILES
+        or confidence < LEARNING_CONFIDENCE
+    ):
+        return {
+            "word": word,
+            "language": language,
+            "confidence": confidence,
+            "learned": False,
+            "confirmed": False,
+        }
+
+    candidate = record_candidate(
+        word,
+        language,
+        confidence,
+    )
+
+    confirmed = candidate[
+        "confirmed"
+    ]
+
     learned = False
 
-    if (
-        language in LANGUAGE_FILES
-        and confidence >= LEARNING_CONFIDENCE
-    ):
+    if confirmed:
         learned = add_word(
             word,
             language,
@@ -259,4 +279,11 @@ def learn_word(
         "language": language,
         "confidence": confidence,
         "learned": learned,
+        "confirmed": confirmed,
+        "confirmations": candidate[
+            "confirmations"
+        ],
+        "average_confidence": candidate[
+            "average_confidence"
+        ],
     }
