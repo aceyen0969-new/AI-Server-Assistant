@@ -18,19 +18,16 @@ std::string normalize(
 ) {
     std::string result;
 
-    for (char c : text) {
-        if (
-            std::isalnum(
-                static_cast<unsigned char>(c)
-            )
-        ) {
+    for (unsigned char character : text) {
+        if (std::isalnum(character)) {
             result += static_cast<char>(
-                std::tolower(
-                    static_cast<unsigned char>(c)
-                )
+                std::tolower(character)
             );
         }
-        else {
+        else if (
+            std::isspace(character) ||
+            character == '-'
+        ) {
             result += ' ';
         }
     }
@@ -57,98 +54,92 @@ std::vector<std::string> tokenize(
 }
 
 std::vector<std::string> build_trigrams(
-    const std::string& text
+    const std::string& word
 ) {
     std::vector<std::string> trigrams;
 
-    std::string normalized =
-        normalize(text);
+    if (word.length() < 3) {
+        return trigrams;
+    }
 
     for (
         std::size_t i = 0;
-        i + 2 < normalized.size();
+        i + 2 < word.length();
         ++i
     ) {
-        if (
-            normalized[i] == ' ' ||
-            normalized[i + 1] == ' ' ||
-            normalized[i + 2] == ' '
-        ) {
-            continue;
-        }
-
         trigrams.push_back(
-            normalized.substr(i, 3)
+            word.substr(i, 3)
         );
     }
 
     return trigrams;
 }
 
-std::map<std::string, int> build_profile(
+std::map<std::string, double> build_profile(
     const std::string& filename
 ) {
-    std::map<std::string, int> profile;
-
-    std::ifstream file(
-        filename
-    );
+    std::map<std::string, double> profile;
+    std::ifstream file(filename);
 
     if (!file.is_open()) {
-        std::cerr
-            << "Could not open training file: "
-            << filename
-            << std::endl;
-
         return profile;
     }
 
     std::string line;
+    int total_trigrams = 0;
 
     while (std::getline(file, line)) {
-        std::vector<std::string> trigrams =
-            build_trigrams(line);
+        std::vector<std::string> words =
+            tokenize(line);
 
-        for (
-            const std::string& trigram :
-            trigrams
-        ) {
-            profile[trigram]++;
+        for (const std::string& word : words) {
+            std::vector<std::string> trigrams =
+                build_trigrams(word);
+
+            for (const std::string& trigram : trigrams) {
+                profile[trigram]++;
+                total_trigrams++;
+            }
         }
+    }
+
+    if (total_trigrams == 0) {
+        return profile;
+    }
+
+    for (
+        auto& entry : profile
+    ) {
+        entry.second /=
+            static_cast<double>(
+                total_trigrams
+            );
     }
 
     return profile;
 }
 
-std::map<std::string, double> normalize_profile(
-    const std::map<std::string, int>& profile
+void merge_profile(
+    std::map<std::string, double>& profile,
+    const std::map<std::string, double>& additional
 ) {
-    std::map<std::string, double> normalized;
+    for (const auto& entry : additional) {
+        profile[entry.first] += entry.second;
+    }
 
-    int total = 0;
+    double total = 0.0;
 
-    for (
-        const auto& entry :
-        profile
-    ) {
+    for (const auto& entry : profile) {
         total += entry.second;
     }
 
-    if (total == 0) {
-        return normalized;
+    if (total <= 0.0) {
+        return;
     }
 
-    for (
-        const auto& entry :
-        profile
-    ) {
-        normalized[entry.first] =
-            static_cast<double>(
-                entry.second
-            ) / total;
+    for (auto& entry : profile) {
+        entry.second /= total;
     }
-
-    return normalized;
 }
 
 std::set<std::string> build_vocabulary(
@@ -161,11 +152,6 @@ std::set<std::string> build_vocabulary(
     );
 
     if (!file.is_open()) {
-        std::cerr
-            << "Could not open training file: "
-            << filename
-            << std::endl;
-
         return vocabulary;
     }
 
@@ -175,17 +161,25 @@ std::set<std::string> build_vocabulary(
         std::vector<std::string> words =
             tokenize(line);
 
-        for (
-            const std::string& word :
-            words
-        ) {
-            if (!word.empty()) {
-                vocabulary.insert(word);
-            }
+        for (const std::string& word : words) {
+            vocabulary.insert(word);
         }
     }
 
     return vocabulary;
+}
+
+void merge_vocabulary(
+    std::set<std::string>& vocabulary,
+    const std::string& filename
+) {
+    std::set<std::string> additional =
+        build_vocabulary(filename);
+
+    vocabulary.insert(
+        additional.begin(),
+        additional.end()
+    );
 }
 
 int count_vocabulary_matches(
@@ -194,10 +188,7 @@ int count_vocabulary_matches(
 ) {
     int score = 0;
 
-    for (
-        const std::string& word :
-        words
-    ) {
+    for (const std::string& word : words) {
         if (
             vocabulary.find(word)
             != vocabulary.end()
@@ -217,13 +208,10 @@ int count_unique_vocabulary_matches(
 ) {
     int score = 0;
 
-    for (
-        const std::string& word :
-        words
-    ) {
+    for (const std::string& word : words) {
         if (
             vocabulary.find(word)
-            != vocabulary.end() &&
+                != vocabulary.end() &&
             other_vocabulary_1.find(word)
                 == other_vocabulary_1.end() &&
             other_vocabulary_2.find(word)
@@ -246,17 +234,14 @@ double calculate_trigram_score(
 
     double score = 0.0;
 
-    for (
-        const std::string& trigram :
-        trigrams
-    ) {
-        auto found =
+    for (const std::string& trigram : trigrams) {
+        auto iterator =
             profile.find(trigram);
 
         if (
-            found != profile.end()
+            iterator != profile.end()
         ) {
-            score += found->second;
+            score += iterator->second;
         }
     }
 
@@ -290,21 +275,15 @@ bool detect_code_switch(
 ) {
     int language_count = 0;
 
-    if (
-        english_unique_score >= 1
-    ) {
+    if (english_unique_score >= 1) {
         language_count++;
     }
 
-    if (
-        filipino_unique_score >= 1
-    ) {
+    if (filipino_unique_score >= 1) {
         language_count++;
     }
 
-    if (
-        bisaya_unique_score >= 1
-    ) {
+    if (bisaya_unique_score >= 1) {
         language_count++;
     }
 
@@ -385,9 +364,6 @@ std::string word_language(
         return "unknown";
     }
 
-    double second_highest_score =
-        0.0;
-
     std::vector<double> scores = {
         english_score,
         filipino_score,
@@ -400,7 +376,7 @@ std::string word_language(
         std::greater<double>()
     );
 
-    second_highest_score =
+    double second_highest_score =
         scores[1];
 
     double relative_margin =
@@ -461,12 +437,8 @@ std::vector<LanguageSegment> build_language_segments(
     std::vector<LanguageSegment> segments;
 
     std::string current_language;
-    std::vector<std::string> current_words;
 
-    for (
-        const std::string& word :
-        words
-    ) {
+    for (const std::string& word : words) {
         std::string language =
             word_language(
                 word,
@@ -486,48 +458,30 @@ std::vector<LanguageSegment> build_language_segments(
         }
 
         if (
-            current_language.empty()
+            segments.empty() ||
+            language != current_language
         ) {
-            current_language =
+            LanguageSegment segment;
+
+            segment.language =
                 language;
 
-            current_words.clear();
-            current_words.push_back(word);
+            segment.words.push_back(
+                word
+            );
 
-            continue;
+            segments.push_back(
+                segment
+            );
+
+            current_language =
+                language;
         }
-
-        if (
-            language == current_language
-        ) {
-            current_words.push_back(word);
-
-            continue;
+        else {
+            segments.back().words.push_back(
+                word
+            );
         }
-
-        if (
-            !current_words.empty()
-        ) {
-            segments.push_back({
-                current_language,
-                current_words
-            });
-        }
-
-        current_language =
-            language;
-
-        current_words.clear();
-        current_words.push_back(word);
-    }
-
-    if (
-        !current_words.empty()
-    ) {
-        segments.push_back({
-            current_language,
-            current_words
-        });
     }
 
     return segments;
@@ -536,9 +490,7 @@ std::vector<LanguageSegment> build_language_segments(
 int count_language_switches(
     const std::vector<LanguageSegment>& segments
 ) {
-    if (
-        segments.size() < 2
-    ) {
+    if (segments.size() <= 1) {
         return 0;
     }
 
@@ -550,25 +502,20 @@ int count_language_switches(
 std::string build_switch_direction(
     const std::vector<LanguageSegment>& segments
 ) {
-    if (
-        segments.size() < 2
-    ) {
+    if (segments.empty()) {
         return "";
     }
 
-    std::string result;
+    std::string result =
+        segments[0].language;
 
     for (
-        std::size_t i = 0;
+        std::size_t i = 1;
         i < segments.size();
         ++i
     ) {
-        if (i > 0) {
-            result += "->";
-        }
-
-        result +=
-            segments[i].language;
+        result += "->";
+        result += segments[i].language;
     }
 
     return result;
@@ -579,15 +526,31 @@ std::string escape_json(
 ) {
     std::string result;
 
-    for (char c : text) {
-        if (c == '"') {
-            result += "\\\"";
-        }
-        else if (c == '\\') {
-            result += "\\\\";
-        }
-        else {
-            result += c;
+    for (char character : text) {
+        switch (character) {
+            case '"':
+                result += "\\\"";
+                break;
+
+            case '\\':
+                result += "\\\\";
+                break;
+
+            case '\n':
+                result += "\\n";
+                break;
+
+            case '\r':
+                result += "\\r";
+                break;
+
+            case '\t':
+                result += "\\t";
+                break;
+
+            default:
+                result += character;
+                break;
         }
     }
 
@@ -614,61 +577,96 @@ void print_json(
     double bisaya_trigram_score,
     const std::vector<LanguageSegment>& segments
 ) {
+    std::cout << "{\n";
+
     std::cout
-        << "{\n"
         << "  \"language\": \""
-        << language
-        << "\",\n"
+        << escape_json(language)
+        << "\",\n";
+
+    std::cout
         << "  \"mixed\": "
         << (mixed ? "true" : "false")
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"code_switched\": "
         << (code_switched ? "true" : "false")
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"ambiguous\": "
         << (ambiguous ? "true" : "false")
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"confidence\": "
         << confidence
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"score_margin\": "
         << score_margin
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"switch_count\": "
         << switch_count
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"code_switch_direction\": \""
         << escape_json(
             code_switch_direction
         )
-        << "\",\n"
+        << "\",\n";
+
+    std::cout
         << "  \"english_word_score\": "
         << english_word_score
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"filipino_word_score\": "
         << filipino_word_score
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"bisaya_word_score\": "
         << bisaya_word_score
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"english_unique_score\": "
         << english_unique_score
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"filipino_unique_score\": "
         << filipino_unique_score
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"bisaya_unique_score\": "
         << bisaya_unique_score
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"english_trigram_score\": "
         << english_trigram_score
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"filipino_trigram_score\": "
         << filipino_trigram_score
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"bisaya_trigram_score\": "
         << bisaya_trigram_score
-        << ",\n"
+        << ",\n";
+
+    std::cout
         << "  \"segments\": [\n";
 
     for (
@@ -676,16 +674,25 @@ void print_json(
         i < segments.size();
         ++i
     ) {
+        const LanguageSegment& segment =
+            segments[i];
+
         std::cout
-            << "    {\n"
+            << "    {\n";
+
+        std::cout
             << "      \"language\": \""
-            << segments[i].language
-            << "\",\n"
+            << escape_json(
+                segment.language
+            )
+            << "\",\n";
+
+        std::cout
             << "      \"words\": \"";
 
         for (
             std::size_t j = 0;
-            j < segments[i].words.size();
+            j < segment.words.size();
             ++j
         ) {
             if (j > 0) {
@@ -694,16 +701,19 @@ void print_json(
 
             std::cout
                 << escape_json(
-                    segments[i].words[j]
+                    segment.words[j]
                 );
         }
 
         std::cout
-            << "\"\n"
+            << "\"\n";
+
+        std::cout
             << "    }";
 
         if (
-            i + 1 < segments.size()
+            i + 1 <
+            segments.size()
         ) {
             std::cout << ",";
         }
@@ -712,124 +722,130 @@ void print_json(
     }
 
     std::cout
-        << "  ]\n"
-        << "}"
-        << std::endl;
+        << "  ]\n";
+
+    std::cout
+        << "}\n";
 }
 
 int main() {
-    const std::string training_directory =
-        "training/";
+    const std::string english_training =
+        "training/english.txt";
 
-    const std::string english_file =
-        training_directory +
-        "english.txt";
+    const std::string filipino_training =
+        "training/filipino.txt";
 
-    const std::string filipino_file =
-        training_directory +
-        "filipino.txt";
+    const std::string bisaya_training =
+        "training/bisaya.txt";
 
-    const std::string bisaya_file =
-        training_directory +
-        "bisaya.txt";
+    const std::string english_learned =
+        "training/learned/english.txt";
 
-    std::map<std::string, int> english_profile =
+    const std::string filipino_learned =
+        "training/learned/filipino.txt";
+
+    const std::string bisaya_learned =
+        "training/learned/bisaya.txt";
+
+    std::map<std::string, double> english_profile =
         build_profile(
-            english_file
+            english_training
         );
 
-    std::map<std::string, int> filipino_profile =
+    std::map<std::string, double> filipino_profile =
         build_profile(
-            filipino_file
+            filipino_training
         );
 
-    std::map<std::string, int> bisaya_profile =
+    std::map<std::string, double> bisaya_profile =
         build_profile(
-            bisaya_file
+            bisaya_training
         );
 
-    std::map<std::string, double> normalized_english_profile =
-        normalize_profile(
-            english_profile
-        );
+    merge_profile(
+        english_profile,
+        build_profile(
+            english_learned
+        )
+    );
 
-    std::map<std::string, double> normalized_filipino_profile =
-        normalize_profile(
-            filipino_profile
-        );
+    merge_profile(
+        filipino_profile,
+        build_profile(
+            filipino_learned
+        )
+    );
 
-    std::map<std::string, double> normalized_bisaya_profile =
-        normalize_profile(
-            bisaya_profile
-        );
+    merge_profile(
+        bisaya_profile,
+        build_profile(
+            bisaya_learned
+        )
+    );
 
     std::set<std::string> english_vocabulary =
         build_vocabulary(
-            english_file
+            english_training
         );
 
     std::set<std::string> filipino_vocabulary =
         build_vocabulary(
-            filipino_file
+            filipino_training
         );
 
     std::set<std::string> bisaya_vocabulary =
         build_vocabulary(
-            bisaya_file
+            bisaya_training
         );
 
-    std::cout
-        << "Quasar Language Engine v0.7.1.1"
-        << std::endl;
+    merge_vocabulary(
+        english_vocabulary,
+        english_learned
+    );
+
+    merge_vocabulary(
+        filipino_vocabulary,
+        filipino_learned
+    );
+
+    merge_vocabulary(
+        bisaya_vocabulary,
+        bisaya_learned
+    );
 
     std::cout
-        << "English trigrams: "
-        << english_profile.size()
-        << std::endl;
-
-    std::cout
-        << "Filipino trigrams: "
-        << filipino_profile.size()
-        << std::endl;
-
-    std::cout
-        << "Bisaya trigrams: "
-        << bisaya_profile.size()
-        << std::endl;
+        << "Quasar Language Engine v0.7.2\n";
 
     std::cout
         << "English vocabulary: "
         << english_vocabulary.size()
-        << std::endl;
+        << "\n";
 
     std::cout
         << "Filipino vocabulary: "
         << filipino_vocabulary.size()
-        << std::endl;
+        << "\n";
 
     std::cout
         << "Bisaya vocabulary: "
         << bisaya_vocabulary.size()
-        << std::endl;
+        << "\n";
 
-    while (true) {
-        std::cout
-            << "\nEnter a message: ";
+    std::cout
+        << "Learned vocabulary enabled.\n";
 
-        std::string message;
+    std::cout
+        << "Enter a message:\n";
 
-        if (
-            !std::getline(
-                std::cin,
-                message
-            )
-        ) {
-            break;
-        }
+    std::string message;
 
-        if (
-            message.empty()
-        ) {
+    while (
+        std::getline(
+            std::cin,
+            message
+        )
+    ) {
+        if (message.empty()) {
             continue;
         }
 
@@ -878,49 +894,52 @@ int main() {
                 filipino_vocabulary
             );
 
-        std::vector<std::string> trigrams =
-            build_trigrams(message);
+        std::vector<std::string> message_trigrams =
+            build_trigrams(
+                normalize(message)
+            );
 
         double english_trigram_score =
             calculate_trigram_score(
-                trigrams,
-                normalized_english_profile
+                message_trigrams,
+                english_profile
             );
 
         double filipino_trigram_score =
             calculate_trigram_score(
-                trigrams,
-                normalized_filipino_profile
+                message_trigrams,
+                filipino_profile
             );
 
         double bisaya_trigram_score =
             calculate_trigram_score(
-                trigrams,
-                normalized_bisaya_profile
+                message_trigrams,
+                bisaya_profile
             );
 
         double english_total =
-            static_cast<double>(
-                english_unique_score
-            ) +
+            english_unique_score +
             english_trigram_score;
 
         double filipino_total =
-            static_cast<double>(
-                filipino_unique_score
-            ) +
+            filipino_unique_score +
             filipino_trigram_score;
 
         double bisaya_total =
-            static_cast<double>(
-                bisaya_unique_score
-            ) +
+            bisaya_unique_score +
             bisaya_trigram_score;
 
         double total_score =
             english_total +
             filipino_total +
             bisaya_total;
+
+        double highest_score =
+            std::max({
+                english_total,
+                filipino_total,
+                bisaya_total
+            });
 
         double score_margin =
             calculate_score_margin(
@@ -1005,24 +1024,9 @@ int main() {
             else {
                 language = "mixed";
             }
-
-            double highest_score =
-                std::max({
-                    english_total,
-                    filipino_total,
-                    bisaya_total
-                });
-
-            if (
-                total_score > 0.0
-            ) {
-                confidence =
-                    highest_score /
-                    total_score;
-            }
         }
         else if (
-            total_score > 0.0
+            total_score > 0
         ) {
             if (
                 score_margin <
@@ -1047,13 +1051,6 @@ int main() {
                 language = "bisaya";
             }
 
-            double highest_score =
-                std::max({
-                    english_total,
-                    filipino_total,
-                    bisaya_total
-                });
-
             confidence =
                 highest_score /
                 total_score;
@@ -1072,9 +1069,9 @@ int main() {
                 english_vocabulary,
                 filipino_vocabulary,
                 bisaya_vocabulary,
-                normalized_english_profile,
-                normalized_filipino_profile,
-                normalized_bisaya_profile
+                english_profile,
+                filipino_profile,
+                bisaya_profile
             );
 
         int switch_count =
@@ -1107,6 +1104,9 @@ int main() {
             bisaya_trigram_score,
             segments
         );
+
+        std::cout
+            << "Enter a message:\n";
     }
 
     return 0;

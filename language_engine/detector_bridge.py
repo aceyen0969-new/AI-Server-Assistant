@@ -7,8 +7,9 @@ ENGINE_DIR = Path(__file__).parent
 ENGINE_PATH = ENGINE_DIR / "detector.exe"
 
 
-def detect_message(message: str):
-
+def detect_message(
+    message: str,
+):
     process = subprocess.run(
         [str(ENGINE_PATH)],
         input=message + "\n",
@@ -18,19 +19,29 @@ def detect_message(message: str):
         check=True,
     )
 
-    for line in reversed(process.stdout.strip().splitlines()):
+    output = process.stdout
 
-        start = line.find("{")
+    start = output.find("{")
+    end = output.rfind("}")
 
-        if start == -1:
-            continue
+    if (
+        start == -1
+        or end == -1
+        or end <= start
+    ):
+        raise RuntimeError(
+            "Language engine returned no valid JSON."
+        )
 
-        try:
-            return json.loads(line[start:])
+    json_text = output[
+        start:end + 1
+    ]
 
-        except json.JSONDecodeError:
-            continue
-
-    raise RuntimeError(
-        "Language engine returned no valid JSON."
-    )
+    try:
+        return json.loads(
+            json_text
+        )
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            "Language engine returned invalid JSON."
+        ) from error
