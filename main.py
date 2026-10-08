@@ -24,6 +24,8 @@ from analytics import observer
 from analytics.database import initialize_database
 from analytics.scheduler import analytics_scheduler
 
+from language_engine.detector_bridge import detect_message
+
 
 load_dotenv()
 
@@ -76,6 +78,7 @@ async def load_features():
 
     await objective.setup(bot)
 
+
 @bot.event
 async def on_ready():
 
@@ -95,15 +98,12 @@ async def on_ready():
 
     try:
 
-
-
         print(
             "COMMAND TREE:",
             [
                 command.name
                 for command in bot.tree.get_commands()
             ]
-
         )
 
         synced = await bot.tree.sync()
@@ -135,6 +135,29 @@ async def on_message(message):
     await moderation_manager.handle_message(
         message
     )
+
+    if not message.author.bot and message.content.strip():
+
+        try:
+
+            language_result = detect_message(
+                message.content
+            )
+
+            print(
+                "LANGUAGE DETECTOR:",
+                language_result
+            )
+
+        except Exception as e:
+
+            print(
+                "LANGUAGE DETECTOR ERROR:"
+            )
+
+            print(
+                repr(e)
+            )
 
     await observer.handle_message(
         message
