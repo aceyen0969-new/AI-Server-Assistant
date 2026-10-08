@@ -1,18 +1,68 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <cctype>
+
+std::string normalize(
+    const std::string& text
+) {
+    std::string result;
+
+    for (char character : text) {
+        if (std::isalnum(
+                static_cast<unsigned char>(character)
+            ) || character == '\'') {
+            result += std::tolower(
+                static_cast<unsigned char>(character)
+            );
+        } else {
+            result += ' ';
+        }
+    }
+
+    return result;
+}
 
 bool contains_word(
     const std::string& message,
     const std::string& word
 ) {
-    return message.find(word) != std::string::npos;
+    std::string normalized_message = normalize(message);
+    std::string normalized_word = normalize(word);
+
+    std::size_t position = normalized_message.find(
+        normalized_word
+    );
+
+    while (position != std::string::npos) {
+        bool left_boundary =
+            position == 0 ||
+            normalized_message[position - 1] == ' ';
+
+        std::size_t end_position =
+            position + normalized_word.length();
+
+        bool right_boundary =
+            end_position == normalized_message.length() ||
+            normalized_message[end_position] == ' ';
+
+        if (left_boundary && right_boundary) {
+            return true;
+        }
+
+        position = normalized_message.find(
+            normalized_word,
+            position + 1
+        );
+    }
+
+    return false;
 }
 
 int main() {
     std::string message;
 
-    std::cout << "Quasar Language Engine v0.2" << std::endl;
+    std::cout << "Quasar Language Engine v0.3" << std::endl;
     std::cout << "Enter a message: ";
 
     std::getline(std::cin, message);
@@ -82,7 +132,9 @@ int main() {
         language = "mixed";
         mixed = true;
 
-        int total_score = english_score + filipino_score;
+        int total_score =
+            english_score + filipino_score;
+
         confidence =
             static_cast<double>(total_score) / 4.0;
 
