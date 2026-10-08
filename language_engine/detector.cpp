@@ -8,13 +8,17 @@
 #include <algorithm>
 #include <cctype>
 
+struct LanguageSegment {
+    std::string language;
+    std::vector<std::string> words;
+};
+
 std::string normalize(
     const std::string& text
 ) {
     std::string result;
 
     for (char c : text) {
-
         if (
             std::isalnum(
                 static_cast<unsigned char>(c)
@@ -102,7 +106,6 @@ std::map<std::string, int> build_profile(
     std::string line;
 
     while (std::getline(file, line)) {
-
         std::vector<std::string> trigrams =
             build_trigrams(line);
 
@@ -159,7 +162,7 @@ std::set<std::string> build_vocabulary(
 
     if (!file.is_open()) {
         std::cerr
-            << "Could not open vocabulary file: "
+            << "Could not open training file: "
             << filename
             << std::endl;
 
@@ -169,7 +172,6 @@ std::set<std::string> build_vocabulary(
     std::string line;
 
     while (std::getline(file, line)) {
-
         std::vector<std::string> words =
             tokenize(line);
 
@@ -234,34 +236,6 @@ int count_unique_vocabulary_matches(
     return score;
 }
 
-bool detect_code_switch(
-    int english_unique_score,
-    int filipino_unique_score,
-    int bisaya_unique_score
-) {
-    int language_count = 0;
-
-    if (
-        english_unique_score >= 1
-    ) {
-        language_count++;
-    }
-
-    if (
-        filipino_unique_score >= 1
-    ) {
-        language_count++;
-    }
-
-    if (
-        bisaya_unique_score >= 1
-    ) {
-        language_count++;
-    }
-
-    return language_count >= 2;
-}
-
 double calculate_trigram_score(
     const std::vector<std::string>& trigrams,
     const std::map<std::string, double>& profile
@@ -309,56 +283,500 @@ double calculate_score_margin(
     return scores[0] - scores[1];
 }
 
-int main() {
+bool detect_code_switch(
+    int english_unique_score,
+    int filipino_unique_score,
+    int bisaya_unique_score
+) {
+    int language_count = 0;
+
+    if (
+        english_unique_score >= 1
+    ) {
+        language_count++;
+    }
+
+    if (
+        filipino_unique_score >= 1
+    ) {
+        language_count++;
+    }
+
+    if (
+        bisaya_unique_score >= 1
+    ) {
+        language_count++;
+    }
+
+    return language_count >= 2;
+}
+
+std::string word_language(
+    const std::string& word,
+    const std::set<std::string>& english_vocabulary,
+    const std::set<std::string>& filipino_vocabulary,
+    const std::set<std::string>& bisaya_vocabulary,
+    const std::map<std::string, double>& english_profile,
+    const std::map<std::string, double>& filipino_profile,
+    const std::map<std::string, double>& bisaya_profile
+) {
+    bool english =
+        english_vocabulary.find(word)
+        != english_vocabulary.end();
+
+    bool filipino =
+        filipino_vocabulary.find(word)
+        != filipino_vocabulary.end();
+
+    bool bisaya =
+        bisaya_vocabulary.find(word)
+        != bisaya_vocabulary.end();
+
+    int matches =
+        static_cast<int>(english) +
+        static_cast<int>(filipino) +
+        static_cast<int>(bisaya);
+
+    if (matches == 1) {
+        if (english) {
+            return "english";
+        }
+
+        if (filipino) {
+            return "filipino";
+        }
+
+        return "bisaya";
+    }
+
+    std::vector<std::string> trigrams =
+        build_trigrams(word);
+
+    if (trigrams.empty()) {
+        return "unknown";
+    }
+
+    double english_score =
+        calculate_trigram_score(
+            trigrams,
+            english_profile
+        );
+
+    double filipino_score =
+        calculate_trigram_score(
+            trigrams,
+            filipino_profile
+        );
+
+    double bisaya_score =
+        calculate_trigram_score(
+            trigrams,
+            bisaya_profile
+        );
+
+    double highest_score =
+        std::max({
+            english_score,
+            filipino_score,
+            bisaya_score
+        });
+
+    if (highest_score <= 0.0) {
+        return "unknown";
+    }
+
+    double second_highest_score =
+        0.0;
+
+    std::vector<double> scores = {
+        english_score,
+        filipino_score,
+        bisaya_score
+    };
+
+    std::sort(
+        scores.begin(),
+        scores.end(),
+        std::greater<double>()
+    );
+
+    second_highest_score =
+        scores[1];
+
+    double relative_margin =
+        highest_score > 0.0
+            ? (
+                highest_score -
+                second_highest_score
+            ) / highest_score
+            : 0.0;
+
+    const double minimum_confidence =
+        0.20;
+
+    const double minimum_margin =
+        0.10;
+
+    double confidence =
+        highest_score /
+        (
+            english_score +
+            filipino_score +
+            bisaya_score
+        );
+
+    if (
+        confidence < minimum_confidence ||
+        relative_margin < minimum_margin
+    ) {
+        return "shared";
+    }
+
+    if (
+        english_score >= filipino_score &&
+        english_score >= bisaya_score
+    ) {
+        return "english";
+    }
+
+    if (
+        filipino_score >= english_score &&
+        filipino_score >= bisaya_score
+    ) {
+        return "filipino";
+    }
+
+    return "bisaya";
+}
+
+std::vector<LanguageSegment> build_language_segments(
+    const std::vector<std::string>& words,
+    const std::set<std::string>& english_vocabulary,
+    const std::set<std::string>& filipino_vocabulary,
+    const std::set<std::string>& bisaya_vocabulary,
+    const std::map<std::string, double>& english_profile,
+    const std::map<std::string, double>& filipino_profile,
+    const std::map<std::string, double>& bisaya_profile
+) {
+    std::vector<LanguageSegment> segments;
+
+    std::string current_language;
+    std::vector<std::string> current_words;
+
+    for (
+        const std::string& word :
+        words
+    ) {
+        std::string language =
+            word_language(
+                word,
+                english_vocabulary,
+                filipino_vocabulary,
+                bisaya_vocabulary,
+                english_profile,
+                filipino_profile,
+                bisaya_profile
+            );
+
+        if (
+            language == "unknown" ||
+            language == "shared"
+        ) {
+            continue;
+        }
+
+        if (
+            current_language.empty()
+        ) {
+            current_language =
+                language;
+
+            current_words.clear();
+            current_words.push_back(word);
+
+            continue;
+        }
+
+        if (
+            language == current_language
+        ) {
+            current_words.push_back(word);
+
+            continue;
+        }
+
+        if (
+            !current_words.empty()
+        ) {
+            segments.push_back({
+                current_language,
+                current_words
+            });
+        }
+
+        current_language =
+            language;
+
+        current_words.clear();
+        current_words.push_back(word);
+    }
+
+    if (
+        !current_words.empty()
+    ) {
+        segments.push_back({
+            current_language,
+            current_words
+        });
+    }
+
+    return segments;
+}
+
+int count_language_switches(
+    const std::vector<LanguageSegment>& segments
+) {
+    if (
+        segments.size() < 2
+    ) {
+        return 0;
+    }
+
+    return static_cast<int>(
+        segments.size() - 1
+    );
+}
+
+std::string build_switch_direction(
+    const std::vector<LanguageSegment>& segments
+) {
+    if (
+        segments.size() < 2
+    ) {
+        return "";
+    }
+
+    std::string result;
+
+    for (
+        std::size_t i = 0;
+        i < segments.size();
+        ++i
+    ) {
+        if (i > 0) {
+            result += "->";
+        }
+
+        result +=
+            segments[i].language;
+    }
+
+    return result;
+}
+
+std::string escape_json(
+    const std::string& text
+) {
+    std::string result;
+
+    for (char c : text) {
+        if (c == '"') {
+            result += "\\\"";
+        }
+        else if (c == '\\') {
+            result += "\\\\";
+        }
+        else {
+            result += c;
+        }
+    }
+
+    return result;
+}
+
+void print_json(
+    const std::string& language,
+    bool mixed,
+    bool code_switched,
+    bool ambiguous,
+    double confidence,
+    double score_margin,
+    int switch_count,
+    const std::string& code_switch_direction,
+    int english_word_score,
+    int filipino_word_score,
+    int bisaya_word_score,
+    int english_unique_score,
+    int filipino_unique_score,
+    int bisaya_unique_score,
+    double english_trigram_score,
+    double filipino_trigram_score,
+    double bisaya_trigram_score,
+    const std::vector<LanguageSegment>& segments
+) {
+    std::cout
+        << "{"
+        << "\"language\":\""
+        << language
+        << "\","
+        << "\"mixed\":"
+        << (mixed ? "true" : "false")
+        << ","
+        << "\"code_switched\":"
+        << (code_switched ? "true" : "false")
+        << ","
+        << "\"ambiguous\":"
+        << (ambiguous ? "true" : "false")
+        << ","
+        << "\"confidence\":"
+        << confidence
+        << ","
+        << "\"score_margin\":"
+        << score_margin
+        << ","
+        << "\"switch_count\":"
+        << switch_count
+        << ","
+        << "\"code_switch_direction\":\""
+        << escape_json(
+            code_switch_direction
+        )
+        << "\","
+        << "\"english_word_score\":"
+        << english_word_score
+        << ","
+        << "\"filipino_word_score\":"
+        << filipino_word_score
+        << ","
+        << "\"bisaya_word_score\":"
+        << bisaya_word_score
+        << ","
+        << "\"english_unique_score\":"
+        << english_unique_score
+        << ","
+        << "\"filipino_unique_score\":"
+        << filipino_unique_score
+        << ","
+        << "\"bisaya_unique_score\":"
+        << bisaya_unique_score
+        << ","
+        << "\"english_trigram_score\":"
+        << english_trigram_score
+        << ","
+        << "\"filipino_trigram_score\":"
+        << filipino_trigram_score
+        << ","
+        << "\"bisaya_trigram_score\":"
+        << bisaya_trigram_score
+        << ","
+        << "\"segments\":[";
+
+    for (
+        std::size_t i = 0;
+        i < segments.size();
+        ++i
+    ) {
+        if (i > 0) {
+            std::cout << ",";
+        }
+
+        std::cout
+            << "{"
+            << "\"language\":\""
+            << segments[i].language
+            << "\","
+            << "\"words\":\"";
+
+        for (
+            std::size_t j = 0;
+            j < segments[i].words.size();
+            ++j
+        ) {
+            if (j > 0) {
+                std::cout << " ";
+            }
+
+            std::cout
+                << escape_json(
+                    segments[i].words[j]
+                );
+        }
+
+        std::cout
+            << "\""
+            << "}";
+    }
 
     std::cout
-        << "Quasar Language Engine v0.7.0"
+        << "]"
+        << "}"
         << std::endl;
+}
+
+int main() {
+    const std::string training_directory =
+        "training/";
+
+    const std::string english_file =
+        training_directory +
+        "english.txt";
+
+    const std::string filipino_file =
+        training_directory +
+        "filipino.txt";
+
+    const std::string bisaya_file =
+        training_directory +
+        "bisaya.txt";
 
     std::map<std::string, int> english_profile =
         build_profile(
-            "training/english.txt"
+            english_file
         );
 
     std::map<std::string, int> filipino_profile =
         build_profile(
-            "training/filipino.txt"
+            filipino_file
         );
 
     std::map<std::string, int> bisaya_profile =
         build_profile(
-            "training/bisaya.txt"
+            bisaya_file
         );
 
-    std::map<std::string, double> english_normalized =
+    std::map<std::string, double> normalized_english_profile =
         normalize_profile(
             english_profile
         );
 
-    std::map<std::string, double> filipino_normalized =
+    std::map<std::string, double> normalized_filipino_profile =
         normalize_profile(
             filipino_profile
         );
 
-    std::map<std::string, double> bisaya_normalized =
+    std::map<std::string, double> normalized_bisaya_profile =
         normalize_profile(
             bisaya_profile
         );
 
     std::set<std::string> english_vocabulary =
         build_vocabulary(
-            "training/english.txt"
+            english_file
         );
 
     std::set<std::string> filipino_vocabulary =
         build_vocabulary(
-            "training/filipino.txt"
+            filipino_file
         );
 
     std::set<std::string> bisaya_vocabulary =
         build_vocabulary(
-            "training/bisaya.txt"
+            bisaya_file
         );
+
+    std::cout
+        << "Quasar Language Engine v0.7.1.1"
+        << std::endl;
 
     std::cout
         << "English trigrams: "
@@ -390,31 +808,29 @@ int main() {
         << bisaya_vocabulary.size()
         << std::endl;
 
-    const double ambiguity_threshold = 0.1;
-
     while (true) {
-
         std::cout
             << "\nEnter a message: ";
 
         std::string message;
 
-        if (!std::getline(
-            std::cin,
-            message
-        )) {
+        if (
+            !std::getline(
+                std::cin,
+                message
+            )
+        ) {
             break;
         }
 
-        if (message.empty()) {
+        if (
+            message.empty()
+        ) {
             continue;
         }
 
         std::vector<std::string> words =
             tokenize(message);
-
-        std::vector<std::string> trigrams =
-            build_trigrams(message);
 
         int english_word_score =
             count_vocabulary_matches(
@@ -458,40 +874,49 @@ int main() {
                 filipino_vocabulary
             );
 
+        std::vector<std::string> trigrams =
+            build_trigrams(message);
+
         double english_trigram_score =
             calculate_trigram_score(
                 trigrams,
-                english_normalized
+                normalized_english_profile
             );
 
         double filipino_trigram_score =
             calculate_trigram_score(
                 trigrams,
-                filipino_normalized
+                normalized_filipino_profile
             );
 
         double bisaya_trigram_score =
             calculate_trigram_score(
                 trigrams,
-                bisaya_normalized
+                normalized_bisaya_profile
             );
 
         double english_total =
-            english_word_score
-            + english_trigram_score;
+            static_cast<double>(
+                english_unique_score
+            ) +
+            english_trigram_score;
 
         double filipino_total =
-            filipino_word_score
-            + filipino_trigram_score;
+            static_cast<double>(
+                filipino_unique_score
+            ) +
+            filipino_trigram_score;
 
         double bisaya_total =
-            bisaya_word_score
-            + bisaya_trigram_score;
+            static_cast<double>(
+                bisaya_unique_score
+            ) +
+            bisaya_trigram_score;
 
         double total_score =
-            english_total
-            + filipino_total
-            + bisaya_total;
+            english_total +
+            filipino_total +
+            bisaya_total;
 
         double score_margin =
             calculate_score_margin(
@@ -500,40 +925,60 @@ int main() {
                 bisaya_total
             );
 
+        const double ambiguity_threshold =
+            0.1;
+
         std::string language =
             "unknown";
 
         bool mixed = false;
-
         bool ambiguous = false;
 
         double confidence = 0.0;
 
-        bool code_switched =
-            detect_code_switch(
-                english_unique_score,
-                filipino_unique_score,
-                bisaya_unique_score
-            );
-
         int strong_language_count = 0;
 
         if (
-            english_unique_score >= 1
+            english_word_score >= 2
         ) {
             strong_language_count++;
         }
 
         if (
-            filipino_unique_score >= 1
+            filipino_word_score >= 2
         ) {
             strong_language_count++;
         }
 
         if (
-            bisaya_unique_score >= 1
+            bisaya_word_score >= 2
         ) {
             strong_language_count++;
+        }
+
+        if (
+            strong_language_count < 2
+        ) {
+            if (
+                english_word_score >= 1 &&
+                filipino_word_score >= 1
+            ) {
+                strong_language_count = 2;
+            }
+
+            if (
+                english_word_score >= 1 &&
+                bisaya_word_score >= 1
+            ) {
+                strong_language_count = 2;
+            }
+
+            if (
+                filipino_word_score >= 1 &&
+                bisaya_word_score >= 1
+            ) {
+                strong_language_count = 2;
+            }
         }
 
         if (
@@ -556,13 +1001,28 @@ int main() {
             else {
                 language = "mixed";
             }
-        }
-        else if (
-            total_score > 0
-        ) {
+
+            double highest_score =
+                std::max({
+                    english_total,
+                    filipino_total,
+                    bisaya_total
+                });
 
             if (
-                score_margin < ambiguity_threshold
+                total_score > 0.0
+            ) {
+                confidence =
+                    highest_score /
+                    total_score;
+            }
+        }
+        else if (
+            total_score > 0.0
+        ) {
+            if (
+                score_margin <
+                ambiguity_threshold
             ) {
                 language = "ambiguous";
                 ambiguous = true;
@@ -591,73 +1051,58 @@ int main() {
                 });
 
             confidence =
-                highest_score / total_score;
+                highest_score /
+                total_score;
         }
 
-        if (
-            mixed &&
-            total_score > 0
-        ) {
+        bool code_switched =
+            detect_code_switch(
+                english_unique_score,
+                filipino_unique_score,
+                bisaya_unique_score
+            );
 
-            double highest_score =
-                std::max({
-                    english_total,
-                    filipino_total,
-                    bisaya_total
-                });
+        std::vector<LanguageSegment> segments =
+            build_language_segments(
+                words,
+                english_vocabulary,
+                filipino_vocabulary,
+                bisaya_vocabulary,
+                normalized_english_profile,
+                normalized_filipino_profile,
+                normalized_bisaya_profile
+            );
 
-            confidence =
-                highest_score / total_score;
-        }
+        int switch_count =
+            count_language_switches(
+                segments
+            );
 
-        std::cout
-            << "{"
-            << "\"language\":\""
-            << language
-            << "\","
-            << "\"mixed\":"
-            << (mixed ? "true" : "false")
-            << ","
-            << "\"code_switched\":"
-            << (code_switched ? "true" : "false")
-            << ","
-            << "\"ambiguous\":"
-            << (ambiguous ? "true" : "false")
-            << ","
-            << "\"confidence\":"
-            << confidence
-            << ","
-            << "\"score_margin\":"
-            << score_margin
-            << ","
-            << "\"english_word_score\":"
-            << english_word_score
-            << ","
-            << "\"filipino_word_score\":"
-            << filipino_word_score
-            << ","
-            << "\"bisaya_word_score\":"
-            << bisaya_word_score
-            << ","
-            << "\"english_unique_score\":"
-            << english_unique_score
-            << ","
-            << "\"filipino_unique_score\":"
-            << filipino_unique_score
-            << ","
-            << "\"bisaya_unique_score\":"
-            << bisaya_unique_score
-            << ","
-            << "\"english_trigram_score\":"
-            << english_trigram_score
-            << ","
-            << "\"filipino_trigram_score\":"
-            << filipino_trigram_score
-            << ","
-            << "\"bisaya_trigram_score\":"
-            << bisaya_trigram_score
-            << "}"
-            << std::endl;
+        std::string code_switch_direction =
+            build_switch_direction(
+                segments
+            );
+
+        print_json(
+            language,
+            mixed,
+            code_switched,
+            ambiguous,
+            confidence,
+            score_margin,
+            switch_count,
+            code_switch_direction,
+            english_word_score,
+            filipino_word_score,
+            bisaya_word_score,
+            english_unique_score,
+            filipino_unique_score,
+            bisaya_unique_score,
+            english_trigram_score,
+            filipino_trigram_score,
+            bisaya_trigram_score,
+            segments
+        );
     }
 
     return 0;
