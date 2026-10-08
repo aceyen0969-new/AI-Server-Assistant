@@ -261,10 +261,30 @@ double calculate_trigram_score(
     return score;
 }
 
+double calculate_score_margin(
+    double english_score,
+    double filipino_score,
+    double bisaya_score
+) {
+    std::vector<double> scores = {
+        english_score,
+        filipino_score,
+        bisaya_score
+    };
+
+    std::sort(
+        scores.begin(),
+        scores.end(),
+        std::greater<double>()
+    );
+
+    return scores[0] - scores[1];
+}
+
 int main() {
 
     std::cout
-        << "Quasar Language Engine v0.6.6.3"
+        << "Quasar Language Engine v0.6.7.1"
         << std::endl;
 
     std::map<std::string, int> english_profile =
@@ -435,10 +455,21 @@ int main() {
         + filipino_total
         + bisaya_total;
 
+    double score_margin =
+        calculate_score_margin(
+            english_total,
+            filipino_total,
+            bisaya_total
+        );
+
+    const double ambiguity_threshold = 0.1;
+
     std::string language =
         "unknown";
 
     bool mixed = false;
+
+    bool ambiguous = false;
 
     double confidence = 0.0;
 
@@ -488,6 +519,12 @@ int main() {
     ) {
 
         if (
+            score_margin < ambiguity_threshold
+        ) {
+            language = "ambiguous";
+            ambiguous = true;
+        }
+        else if (
             english_total >= filipino_total &&
             english_total >= bisaya_total
         ) {
@@ -538,8 +575,14 @@ int main() {
         << "\"mixed\":"
         << (mixed ? "true" : "false")
         << ","
+        << "\"ambiguous\":"
+        << (ambiguous ? "true" : "false")
+        << ","
         << "\"confidence\":"
         << confidence
+        << ","
+        << "\"score_margin\":"
+        << score_margin
         << ","
         << "\"english_word_score\":"
         << english_word_score
