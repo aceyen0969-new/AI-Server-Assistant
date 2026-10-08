@@ -2,6 +2,8 @@
 #include <string>
 #include <vector>
 #include <cctype>
+#include <algorithm>
+#include <map>
 
 std::string normalize(
     const std::string& text
@@ -9,9 +11,12 @@ std::string normalize(
     std::string result;
 
     for (char character : text) {
-        if (std::isalnum(
+        if (
+            std::isalnum(
                 static_cast<unsigned char>(character)
-            ) || character == '\'') {
+            ) ||
+            character == '\''
+        ) {
             result += std::tolower(
                 static_cast<unsigned char>(character)
             );
@@ -23,18 +28,54 @@ std::string normalize(
     return result;
 }
 
+std::map<std::string, int> build_trigrams(
+    const std::string& text
+) {
+    std::map<std::string, int> trigrams;
+
+    std::string normalized =
+        normalize(text);
+
+    for (
+        std::size_t i = 0;
+        i + 2 < normalized.length();
+        i++
+    ) {
+        if (
+            normalized[i] == ' ' ||
+            normalized[i + 1] == ' ' ||
+            normalized[i + 2] == ' '
+        ) {
+            continue;
+        }
+
+        std::string trigram =
+            normalized.substr(i, 3);
+
+        trigrams[trigram]++;
+    }
+
+    return trigrams;
+}
+
 bool contains_word(
     const std::string& message,
     const std::string& word
 ) {
-    std::string normalized_message = normalize(message);
-    std::string normalized_word = normalize(word);
+    std::string normalized_message =
+        normalize(message);
 
-    std::size_t position = normalized_message.find(
-        normalized_word
-    );
+    std::string normalized_word =
+        normalize(word);
 
-    while (position != std::string::npos) {
+    std::size_t position =
+        normalized_message.find(
+            normalized_word
+        );
+
+    while (
+        position != std::string::npos
+    ) {
         bool left_boundary =
             position == 0 ||
             normalized_message[position - 1] == ' ';
@@ -43,29 +84,69 @@ bool contains_word(
             position + normalized_word.length();
 
         bool right_boundary =
-            end_position == normalized_message.length() ||
+            end_position ==
+                normalized_message.length() ||
             normalized_message[end_position] == ' ';
 
-        if (left_boundary && right_boundary) {
+        if (
+            left_boundary &&
+            right_boundary
+        ) {
             return true;
         }
 
-        position = normalized_message.find(
-            normalized_word,
-            position + 1
-        );
+        position =
+            normalized_message.find(
+                normalized_word,
+                position + 1
+            );
     }
 
     return false;
 }
 
+double calculate_trigram_score(
+    const std::map<std::string, int>& trigrams,
+    const std::map<std::string, double>& profile
+) {
+    double score = 0.0;
+
+    for (
+        const auto& pattern :
+        profile
+    ) {
+        auto found =
+            trigrams.find(pattern.first);
+
+        if (
+            found != trigrams.end()
+        ) {
+            score +=
+                found->second *
+                pattern.second;
+        }
+    }
+
+    return score;
+}
+
 int main() {
     std::string message;
 
-    std::cout << "Quasar Language Engine v0.3" << std::endl;
-    std::cout << "Enter a message: ";
+    std::cout
+        << "Quasar Language Engine v0.5.3"
+        << std::endl;
 
-    std::getline(std::cin, message);
+    std::cout
+        << "Enter a message: ";
+
+    std::getline(
+        std::cin,
+        message
+    );
+
+    std::map<std::string, int> trigrams =
+        build_trigrams(message);
 
     std::vector<std::string> english_words = {
         "hello",
@@ -109,75 +190,295 @@ int main() {
         "kami"
     };
 
-    int english_score = 0;
-    int filipino_score = 0;
+    std::vector<std::string> bisaya_words = {
+        "unsa",
+        "ngano",
+        "kinsa",
+        "asa",
+        "kanus-a",
+        "kumusta",
+        "ako",
+        "ikaw",
+        "imo",
+        "imong",
+        "atong",
+        "nato",
+        "sila",
+        "niya",
+        "wala",
+        "dili",
+        "oo",
+        "mao",
+        "naa",
+        "gihimo",
+        "buhat",
+        "buhaton",
+        "adto",
+        "ari",
+        "dinhi",
+        "didto",
+        "unsaon",
+        "nganong"
+    };
 
-    for (const std::string& word : english_words) {
-        if (contains_word(message, word)) {
-            english_score++;
+    std::map<std::string, double> english_trigrams = {
+        {"the", 3.0},
+        {"and", 3.0},
+        {"ing", 0.5},
+        {"ion", 1.0},
+        {"ent", 1.0},
+        {"her", 1.0},
+        {"ere", 1.0},
+        {"for", 2.0},
+        {"tha", 2.0},
+        {"hat", 1.0}
+    };
+
+    std::map<std::string, double> filipino_trigrams = {
+        {"ang", 3.0},
+        {"mga", 3.0},
+        {"ika", 2.0},
+        {"ano", 2.0},
+        {"han", 1.0},
+        {"pag", 2.0},
+        {"mag", 2.0},
+        {"nag", 2.0},
+        {"uma", 1.0}
+    };
+
+    std::map<std::string, double> bisaya_trigrams = {
+        {"gih", 3.0},
+        {"him", 3.0},
+        {"imo", 3.0},
+        {"ing", 0.5},
+        {"nga", 2.0},
+        {"ung", 2.0},
+        {"asa", 3.0},
+        {"uns", 3.0},
+        {"dil", 3.0},
+        {"ili", 2.0}
+    };
+
+    int english_word_score = 0;
+    int filipino_word_score = 0;
+    int bisaya_word_score = 0;
+
+    for (
+        const std::string& word :
+        english_words
+    ) {
+        if (
+            contains_word(
+                message,
+                word
+            )
+        ) {
+            english_word_score++;
         }
     }
 
-    for (const std::string& word : filipino_words) {
-        if (contains_word(message, word)) {
-            filipino_score++;
+    for (
+        const std::string& word :
+        filipino_words
+    ) {
+        if (
+            contains_word(
+                message,
+                word
+            )
+        ) {
+            filipino_word_score++;
         }
     }
 
-    std::string language = "unknown";
+    for (
+        const std::string& word :
+        bisaya_words
+    ) {
+        if (
+            contains_word(
+                message,
+                word
+            )
+        ) {
+            bisaya_word_score++;
+        }
+    }
+
+    double english_trigram_score =
+        calculate_trigram_score(
+            trigrams,
+            english_trigrams
+        );
+
+    double filipino_trigram_score =
+        calculate_trigram_score(
+            trigrams,
+            filipino_trigrams
+        );
+
+    double bisaya_trigram_score =
+        calculate_trigram_score(
+            trigrams,
+            bisaya_trigrams
+        );
+
+    double english_score =
+        english_word_score +
+        english_trigram_score;
+
+    double filipino_score =
+        filipino_word_score +
+        filipino_trigram_score;
+
+    double bisaya_score =
+        bisaya_word_score +
+        bisaya_trigram_score;
+
+    double highest_score =
+        std::max({
+            english_score,
+            filipino_score,
+            bisaya_score
+        });
+
+    int strong_language_count = 0;
+
+    if (
+        english_word_score > 0
+    ) {
+        strong_language_count++;
+    }
+
+    if (
+        filipino_word_score > 0
+    ) {
+        strong_language_count++;
+    }
+
+    if (
+        bisaya_word_score > 0
+    ) {
+        strong_language_count++;
+    }
+
+    std::string language =
+        "unknown";
+
     bool mixed = false;
+
     double confidence = 0.0;
 
-    if (english_score > 0 && filipino_score > 0) {
+    if (
+        strong_language_count >= 2
+    ) {
         language = "mixed";
         mixed = true;
-
-        int total_score =
-            english_score + filipino_score;
-
-        confidence =
-            static_cast<double>(total_score) / 4.0;
-
-        if (confidence > 1.0) {
-            confidence = 1.0;
-        }
     }
-    else if (english_score > filipino_score) {
-        language = "english";
-
-        confidence =
-            static_cast<double>(english_score) / 3.0;
-
-        if (confidence > 1.0) {
-            confidence = 1.0;
+    else if (
+        highest_score > 0
+    ) {
+        if (
+            english_score ==
+            highest_score
+        ) {
+            language = "english";
         }
-    }
-    else if (filipino_score > english_score) {
-        language = "filipino";
-
-        confidence =
-            static_cast<double>(filipino_score) / 3.0;
-
-        if (confidence > 1.0) {
-            confidence = 1.0;
+        else if (
+            filipino_score ==
+            highest_score
+        ) {
+            language = "filipino";
+        }
+        else {
+            language = "bisaya";
         }
     }
 
-    std::cout << std::endl;
-    std::cout << "Message: " << message << std::endl;
-    std::cout << "Language: " << language << std::endl;
-    std::cout << "Mixed language: "
-              << (mixed ? "true" : "false")
-              << std::endl;
-    std::cout << "English score: "
-              << english_score
-              << std::endl;
-    std::cout << "Filipino score: "
-              << filipino_score
-              << std::endl;
-    std::cout << "Confidence: "
-              << confidence
-              << std::endl;
+    double total_score =
+        english_score +
+        filipino_score +
+        bisaya_score;
+
+    if (
+        total_score > 0
+    ) {
+        confidence =
+            highest_score /
+            total_score;
+    }
+
+    std::cout
+        << std::endl;
+
+    std::cout
+        << "Message: "
+        << message
+        << std::endl;
+
+    std::cout
+        << "Language: "
+        << language
+        << std::endl;
+
+    std::cout
+        << "Mixed language: "
+        << (
+            mixed
+                ? "true"
+                : "false"
+        )
+        << std::endl;
+
+    std::cout
+        << "English word score: "
+        << english_word_score
+        << std::endl;
+
+    std::cout
+        << "Filipino word score: "
+        << filipino_word_score
+        << std::endl;
+
+    std::cout
+        << "Bisaya word score: "
+        << bisaya_word_score
+        << std::endl;
+
+    std::cout
+        << "English trigram score: "
+        << english_trigram_score
+        << std::endl;
+
+    std::cout
+        << "Filipino trigram score: "
+        << filipino_trigram_score
+        << std::endl;
+
+    std::cout
+        << "Bisaya trigram score: "
+        << bisaya_trigram_score
+        << std::endl;
+
+    std::cout
+        << "English total score: "
+        << english_score
+        << std::endl;
+
+    std::cout
+        << "Filipino total score: "
+        << filipino_score
+        << std::endl;
+
+    std::cout
+        << "Bisaya total score: "
+        << bisaya_score
+        << std::endl;
+
+    std::cout
+        << "Confidence: "
+        << confidence
+        << std::endl;
 
     return 0;
 }
