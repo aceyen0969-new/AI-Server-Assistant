@@ -4,6 +4,7 @@
 #include <cctype>
 #include <algorithm>
 #include <map>
+#include <fstream>
 
 std::string normalize(
     const std::string& text
@@ -56,6 +57,77 @@ std::map<std::string, int> build_trigrams(
     }
 
     return trigrams;
+}
+
+std::map<std::string, int> build_profile(
+    const std::string& filename
+) {
+    std::map<std::string, int> profile;
+
+    std::ifstream file(filename);
+
+    if (!file.is_open()) {
+        std::cerr
+            << "Failed to open training file: "
+            << filename
+            << std::endl;
+
+        return profile;
+    }
+
+    std::string line;
+
+    while (std::getline(file, line)) {
+
+        std::map<std::string, int> trigrams =
+            build_trigrams(line);
+
+        for (
+            const auto& entry :
+            trigrams
+        ) {
+            profile[entry.first] +=
+                entry.second;
+        }
+    }
+
+    file.close();
+
+    return profile;
+}
+
+std::map<std::string, double> normalize_profile(
+    const std::map<std::string, int>& profile
+) {
+    std::map<std::string, double> normalized;
+
+    int total = 0;
+
+    for (
+        const auto& entry :
+        profile
+    ) {
+        total += entry.second;
+    }
+
+    if (total == 0) {
+        return normalized;
+    }
+
+    for (
+        const auto& entry :
+        profile
+    ) {
+        normalized[entry.first] =
+            static_cast<double>(
+                entry.second
+            ) /
+            static_cast<double>(
+                total
+            );
+    }
+
+    return normalized;
 }
 
 bool contains_word(
@@ -116,7 +188,9 @@ double calculate_trigram_score(
         profile
     ) {
         auto found =
-            trigrams.find(pattern.first);
+            trigrams.find(
+                pattern.first
+            );
 
         if (
             found != trigrams.end()
@@ -131,11 +205,57 @@ double calculate_trigram_score(
 }
 
 int main() {
-    std::string message;
 
     std::cout
-        << "Quasar Language Engine v0.5.3"
+        << "Quasar Language Engine v0.6.0"
         << std::endl;
+
+    std::map<std::string, int> english_raw =
+        build_profile(
+            "training/english.txt"
+        );
+
+    std::map<std::string, int> filipino_raw =
+        build_profile(
+            "training/filipino.txt"
+        );
+
+    std::map<std::string, int> bisaya_raw =
+        build_profile(
+            "training/bisaya.txt"
+        );
+
+    std::map<std::string, double> english_trigrams =
+        normalize_profile(
+            english_raw
+        );
+
+    std::map<std::string, double> filipino_trigrams =
+        normalize_profile(
+            filipino_raw
+        );
+
+    std::map<std::string, double> bisaya_trigrams =
+        normalize_profile(
+            bisaya_raw
+        );
+
+    std::cout
+        << "English trigrams: "
+        << english_trigrams.size()
+        << std::endl;
+
+    std::cout
+        << "Filipino trigrams: "
+        << filipino_trigrams.size()
+        << std::endl;
+
+    std::cout
+        << "Bisaya trigrams: "
+        << bisaya_trigrams.size()
+        << std::endl;
+
+    std::string message;
 
     std::cout
         << "Enter a message: ";
@@ -146,7 +266,9 @@ int main() {
     );
 
     std::map<std::string, int> trigrams =
-        build_trigrams(message);
+        build_trigrams(
+            message
+        );
 
     std::vector<std::string> english_words = {
         "hello",
@@ -219,44 +341,6 @@ int main() {
         "didto",
         "unsaon",
         "nganong"
-    };
-
-    std::map<std::string, double> english_trigrams = {
-        {"the", 3.0},
-        {"and", 3.0},
-        {"ing", 0.5},
-        {"ion", 1.0},
-        {"ent", 1.0},
-        {"her", 1.0},
-        {"ere", 1.0},
-        {"for", 2.0},
-        {"tha", 2.0},
-        {"hat", 1.0}
-    };
-
-    std::map<std::string, double> filipino_trigrams = {
-        {"ang", 3.0},
-        {"mga", 3.0},
-        {"ika", 2.0},
-        {"ano", 2.0},
-        {"han", 1.0},
-        {"pag", 2.0},
-        {"mag", 2.0},
-        {"nag", 2.0},
-        {"uma", 1.0}
-    };
-
-    std::map<std::string, double> bisaya_trigrams = {
-        {"gih", 3.0},
-        {"him", 3.0},
-        {"imo", 3.0},
-        {"ing", 0.5},
-        {"nga", 2.0},
-        {"ung", 2.0},
-        {"asa", 3.0},
-        {"uns", 3.0},
-        {"dil", 3.0},
-        {"ili", 2.0}
     };
 
     int english_word_score = 0;
