@@ -207,7 +207,7 @@ double calculate_trigram_score(
 int main() {
 
     std::cout
-        << "Quasar Language Engine v0.6.0"
+        << "Quasar Language Engine v0.6.2"
         << std::endl;
 
     std::map<std::string, int> english_raw =
@@ -493,75 +493,38 @@ int main() {
     }
 
     std::cout
-        << std::endl;
-
-    std::cout
-        << "Message: "
-        << message
-        << std::endl;
-
-    std::cout
-        << "Language: "
+        << "{"
+        << "\"language\":\""
         << language
-        << std::endl;
-
-    std::cout
-        << "Mixed language: "
+        << "\","
+        << "\"mixed\":"
         << (
             mixed
                 ? "true"
                 : "false"
         )
-        << std::endl;
-
-    std::cout
-        << "English word score: "
-        << english_word_score
-        << std::endl;
-
-    std::cout
-        << "Filipino word score: "
-        << filipino_word_score
-        << std::endl;
-
-    std::cout
-        << "Bisaya word score: "
-        << bisaya_word_score
-        << std::endl;
-
-    std::cout
-        << "English trigram score: "
-        << english_trigram_score
-        << std::endl;
-
-    std::cout
-        << "Filipino trigram score: "
-        << filipino_trigram_score
-        << std::endl;
-
-    std::cout
-        << "Bisaya trigram score: "
-        << bisaya_trigram_score
-        << std::endl;
-
-    std::cout
-        << "English total score: "
-        << english_score
-        << std::endl;
-
-    std::cout
-        << "Filipino total score: "
-        << filipino_score
-        << std::endl;
-
-    std::cout
-        << "Bisaya total score: "
-        << bisaya_score
-        << std::endl;
-
-    std::cout
-        << "Confidence: "
+        << ","
+        << "\"confidence\":"
         << confidence
+        << ","
+        << "\"english_word_score\":"
+        << english_word_score
+        << ","
+        << "\"filipino_word_score\":"
+        << filipino_word_score
+        << ","
+        << "\"bisaya_word_score\":"
+        << bisaya_word_score
+        << ","
+        << "\"english_trigram_score\":"
+        << english_trigram_score
+        << ","
+        << "\"filipino_trigram_score\":"
+        << filipino_trigram_score
+        << ","
+        << "\"bisaya_trigram_score\":"
+        << bisaya_trigram_score
+        << "}"
         << std::endl;
 
     return 0;
