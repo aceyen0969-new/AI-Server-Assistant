@@ -29,6 +29,10 @@ from language_engine.detector_bridge import (
     learn_unknown_words,
 )
 
+from conflict_detection.detector import (
+    detect_conflict_signals,
+)
+
 
 load_dotenv()
 
@@ -58,7 +62,6 @@ scheduler_task = None
 
 
 async def load_features():
-
     await ping.setup(bot)
     await serverinfo.setup(bot)
     await serverstats.setup(bot)
@@ -167,10 +170,19 @@ async def on_message(message):
                     learning_results
                 )
 
+            conflict_result = detect_conflict_signals(
+                message.content
+            )
+
+            print(
+                "CONFLICT SIGNALS:",
+                conflict_result
+            )
+
         except Exception as e:
 
             print(
-                "LANGUAGE DETECTOR ERROR:"
+                "MESSAGE ANALYSIS ERROR:"
             )
 
             print(
