@@ -10,23 +10,46 @@ from security.approval_view import ApprovalView
 async def setup(bot):
     @bot.tree.command(
         name="approval-test",
-        description="Test the AI action approval system."
+        description="Test the AI channel-rename approval workflow.",
     )
     @app_commands.describe(
-        action="The action to test.",
-        target="The target of the action.",
-        reason="Why the action was requested."
+        target="The channel to rename.",
+        new_name="The new name for the test channel.",
+        reason="Why the rename was requested.",
     )
     async def approval_test(
         interaction: discord.Interaction,
-        action: str,
-        target: str,
-        reason: str
+        target: discord.TextChannel,
+        new_name: str,
+        reason: str,
     ):
         if interaction.guild is None:
             await interaction.response.send_message(
-                "❌ This command can only be used inside a server.",
-                ephemeral=True
+                "This command can only be used inside a server.",
+                ephemeral=True,
+            )
+            return
+
+        if target.guild.id != interaction.guild.id:
+            await interaction.response.send_message(
+                "The target channel must belong to this server.",
+                ephemeral=True,
+            )
+            return
+
+        new_name = new_name.strip()
+
+        if not new_name or len(new_name) > 100:
+            await interaction.response.send_message(
+                "The new channel name must be between 1 and 100 characters.",
+                ephemeral=True,
+            )
+            return
+
+        if target.name == new_name:
+            await interaction.response.send_message(
+                "The channel already has that name.",
+                ephemeral=True,
             )
             return
 
@@ -34,20 +57,26 @@ async def setup(bot):
 
         create_approval_request(
             request_id=request_id,
-            action=action,
-            target_name=target,
-            reason=reason
+            action="rename_channel",
+            target_id=target.id,
+            target_name=target.name,
+            reason=reason,
+            data={
+                "channel_id": target.id,
+                "new_name": new_name,
+            },
         )
 
         embed = discord.Embed(
             title="🛡️ AI Action Request",
             description=(
-                f"**Action:** `{action}`\n"
-                f"**Target:** {target}\n"
+                "**Action:** `rename_channel`\n"
+                f"**Target:** {target.mention}\n"
+                f"**New name:** `{new_name}`\n"
                 f"**Reason:** {reason}\n\n"
-                "⚠️ This action requires approval."
+                "This action requires approval."
             ),
-            color=discord.Color.orange()
+            color=discord.Color.orange(),
         )
 
         embed.set_footer(
@@ -57,10 +86,10 @@ async def setup(bot):
         view = ApprovalView(
             request_id=request_id,
             allowed_user_id=interaction.guild.owner_id,
-            guild=interaction.guild
+            guild=interaction.guild,
         )
 
         await interaction.response.send_message(
             embed=embed,
-            view=view
+            view=view,
         )

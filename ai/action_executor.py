@@ -15,30 +15,42 @@ def _is_valid_approval(
     reason: str | None,
     approval_request_id: str | None,
 ) -> bool:
-    """Check the approval, policy, and action payload."""
+    """Validate approval and log the exact reason for rejection."""
+
+    def reject(message: str) -> bool:
+        print(f"APPROVAL DEBUG: {message}")
+        return False
 
     if not isinstance(approval_request_id, str):
-        return False
+        return reject("Invalid request ID type.")
 
     if not approval_request_id.strip():
-        return False
+        return reject("Empty request ID.")
 
     request = get_approval_request(approval_request_id)
 
     if request is None:
-        return False
+        return reject("Approval request not found.")
 
-    if request.cancelled or not request.approved:
-        return False
+    if request.cancelled:
+        return reject("Request has been cancelled.")
 
-    if request.executing or request.completed:
-        return False
+    if not request.approved:
+        return reject("Request has not been approved.")
+
+    if request.executing:
+        return reject("Request is already executing.")
+
+    if request.completed:
+        return reject(
+            f"Request has already been used. Status: {request.status}"
+        )
 
     if is_expired(approval_request_id):
-        return False
+        return reject("Approval request expired.")
 
     if not isinstance(action, dict):
-        return False
+        return reject("Action payload is not a dictionary.")
 
     action_type = action.get("action")
     decision = get_safety_decision(action_type)
@@ -48,12 +60,12 @@ def _is_valid_approval(
         or not decision.get("requires_approval")
         or decision.get("policy") != "approval"
     ):
-        return False
+        return reject(f"Policy rejected action: {action_type!r}")
 
     snapshot = request.approved_snapshot
 
     if not isinstance(snapshot, dict):
-        return False
+        return reject("Approved snapshot is missing.")
 
     action_data = {
         key: value
@@ -62,23 +74,24 @@ def _is_valid_approval(
     }
 
     if action_type != snapshot.get("action"):
-        return False
+        return reject("Action type differs from approved snapshot.")
 
     if action_data != snapshot.get("data"):
-        return False
+        return reject("Action payload differs from approved snapshot.")
 
     if request.action != snapshot.get("action"):
-        return False
+        return reject("Stored action differs from approved snapshot.")
 
     if request.data != snapshot.get("data"):
-        return False
+        return reject("Stored request data changed after approval.")
 
     if request.reason != snapshot.get("reason"):
-        return False
+        return reject("Stored reason changed after approval.")
 
     if reason != snapshot.get("reason"):
-        return False
+        return reject("Execution reason differs from approved reason.")
 
+    print("APPROVAL DEBUG: All validation checks passed.")
     return True
 
 
@@ -95,16 +108,27 @@ async def _execute_action_impl(
         channel_id = action.get("channel_id")
         category_id = action.get("category_id")
 
-        if type(channel_id) is not int or type(category_id) is not int:
+        if type(channel_id) is not int:
+            print("ACTION EXECUTOR: Invalid channel ID.")
+            return False
+
+        if type(category_id) is not int:
+            print("ACTION EXECUTOR: Invalid category ID.")
             return False
 
         channel = guild.get_channel(channel_id)
         category = guild.get_channel(category_id)
 
-        if channel is None or category is None:
+        if channel is None:
+            print("ACTION EXECUTOR: Source channel not found.")
+            return False
+
+        if category is None:
+            print("ACTION EXECUTOR: Target category not found.")
             return False
 
         if not isinstance(category, discord.CategoryChannel):
+            print("ACTION EXECUTOR: Target is not a category.")
             return False
 
         if not isinstance(
@@ -116,11 +140,16 @@ async def _execute_action_impl(
                 discord.ForumChannel,
             ),
         ):
+            print("ACTION EXECUTOR: Unsupported source channel type.")
             return False
 
         try:
-            await channel.edit(category=category, reason=reason)
+            await channel.edit(
+                category=category,
+                reason=reason,
+            )
             return True
+
         except discord.HTTPException as error:
             print(f"ACTION EXECUTOR: Move failed: {error!r}")
             return False
@@ -130,19 +159,26 @@ async def _execute_action_impl(
         new_name = action.get("new_name")
 
         if type(channel_id) is not int:
+            print("ACTION EXECUTOR: Invalid channel ID.")
             return False
 
         if not isinstance(new_name, str):
+            print("ACTION EXECUTOR: Invalid channel name.")
             return False
 
         new_name = new_name.strip()
 
         if not new_name or len(new_name) > 100:
+            print("ACTION EXECUTOR: Channel name length is invalid.")
             return False
 
         channel = guild.get_channel(channel_id)
 
         if channel is None:
+            print(
+                f"ACTION EXECUTOR: Channel {channel_id} was not found "
+                "in the current guild cache."
+            )
             return False
 
         if not isinstance(
@@ -154,11 +190,16 @@ async def _execute_action_impl(
                 discord.ForumChannel,
             ),
         ):
+            print("ACTION EXECUTOR: Unsupported channel type.")
             return False
 
         try:
-            await channel.edit(name=new_name, reason=reason)
+            await channel.edit(
+                name=new_name,
+                reason=reason,
+            )
             return True
+
         except discord.HTTPException as error:
             print(f"ACTION EXECUTOR: Rename failed: {error!r}")
             return False
@@ -168,17 +209,26 @@ async def _execute_action_impl(
         channel_type = action.get("channel_type")
 
         if not isinstance(name, str):
+            print("ACTION EXECUTOR: Invalid channel name.")
             return False
 
         name = name.strip()
 
         if not name or len(name) > 100:
+            print("ACTION EXECUTOR: Channel name length is invalid.")
             return False
 
         if channel_type not in ("text", "voice"):
+            print("ACTION EXECUTOR: Unsupported channel type.")
             return False
 
-        if discord.utils.get(guild.channels, name=name) is not None:
+        existing_channel = discord.utils.get(
+            guild.channels,
+            name=name,
+        )
+
+        if existing_channel is not None:
+            print("ACTION EXECUTOR: A channel with that name exists.")
             return False
 
         try:
@@ -194,10 +244,12 @@ async def _execute_action_impl(
                 )
 
             return True
+
         except discord.HTTPException as error:
             print(f"ACTION EXECUTOR: Create failed: {error!r}")
             return False
 
+    print(f"ACTION EXECUTOR: Unsupported action: {action_type!r}")
     return False
 
 
@@ -217,7 +269,8 @@ async def execute_action(
         print("ACTION EXECUTOR: Blocked invalid approval.")
         return False
 
-    # This state transition happens before the first await.
+    # Claim the request before the first Discord API call.
+    # This synchronous state change prevents a second execution.
     claimed = claim_approved_request(
         request_id=approval_request_id,
         action=action,
@@ -225,8 +278,13 @@ async def execute_action(
     )
 
     if not claimed:
-        print("ACTION EXECUTOR: Request could not be claimed.")
+        print(
+            "ACTION EXECUTOR: Request could not be claimed. "
+            "It may have expired, changed, or already been used."
+        )
         return False
+
+    success = False
 
     try:
         success = await _execute_action_impl(
@@ -234,14 +292,32 @@ async def execute_action(
             action=action,
             reason=reason,
         )
+
     except Exception as error:
         print(f"ACTION EXECUTOR: Unexpected failure: {error!r}")
         success = False
+
     finally:
-        # Record the outcome even when the operation fails.
-        complete_approval_request(
+        recorded = complete_approval_request(
             request_id=approval_request_id,
-            success=locals().get("success", False),
+            success=success,
+        )
+
+        if not recorded:
+            print(
+                "ACTION EXECUTOR: WARNING: Could not record "
+                "the final execution status."
+            )
+
+    if success:
+        print(
+            f"ACTION EXECUTOR: Successfully executed "
+            f"{action.get('action')!r}."
+        )
+    else:
+        print(
+            f"ACTION EXECUTOR: Execution failed for "
+            f"{action.get('action')!r}."
         )
 
     return success
