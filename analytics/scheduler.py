@@ -10,6 +10,54 @@ from analytics.proposals import process_analytics_proposals
 ANALYTICS_INTERVAL = 86400
 
 
+def format_structure_findings(structure_result):
+    """Format deterministic findings for a Discord embed."""
+
+    if not isinstance(structure_result, dict):
+        return "Deterministic findings are unavailable."
+
+    if not structure_result.get("available", True):
+        return "Deterministic structure analysis is unavailable."
+
+    findings = structure_result.get("findings", [])
+
+    if not isinstance(findings, list):
+        return "Deterministic findings are unavailable."
+
+    if not findings:
+        return "No potential organization issues were detected."
+
+    lines = []
+
+    for finding in findings[:5]:
+        if not isinstance(finding, dict):
+            continue
+
+        title = str(finding.get("title", "Finding"))
+        description = str(
+            finding.get("description", "No description available.")
+        )
+        recommendation = str(
+            finding.get("recommendation", "Review if appropriate.")
+        )
+
+        lines.append(
+            f"**{title[:200]}**\n"
+            f"{description[:300]}\n"
+            f"*Suggestion: {recommendation[:250]}*"
+        )
+
+    if not lines:
+        return "No readable findings were produced."
+
+    result = "\n\n".join(lines)
+
+    if len(findings) > 5:
+        result += f"\n\n*And {len(findings) - 5} more finding(s).*"
+
+    return result[:1024]
+
+
 async def run_analytics_cycle(guild: discord.Guild):
     """Run one scheduled analytics cycle."""
 
@@ -24,39 +72,53 @@ async def run_analytics_cycle(guild: discord.Guild):
         guild=guild,
     )
 
-    analysis = result.get("analysis")
-    provider = result.get("provider")
-
-    if analysis is None:
+    if not isinstance(result, dict):
         print(
-            "ANALYTICS SCHEDULER: AI analysis failed.",
+            "ANALYTICS SCHEDULER: Invalid analytics result.",
             flush=True,
         )
         return
 
-    print(
-        f"ANALYTICS SCHEDULER: Analysis completed using {provider}.",
-        flush=True,
+    analysis = result.get("analysis")
+    provider = result.get("provider")
+    report = result.get("report", {})
+
+    if not isinstance(report, dict):
+        report = {}
+
+    structure_result = report.get(
+        "deterministic_structure",
+        {},
     )
 
-    summary = analysis.get("summary", "No summary available.")
+    if analysis is not None:
+        print(
+            f"ANALYTICS SCHEDULER: Analysis completed using {provider}.",
+            flush=True,
+        )
 
-    if not isinstance(summary, str):
-        summary = str(summary)
+        summary = analysis.get(
+            "summary",
+            "No summary available.",
+        )
 
-    print(
-        f"ANALYTICS SCHEDULER: Summary: {summary}",
-        flush=True,
-    )
+        if not isinstance(summary, str):
+            summary = str(summary)
+    else:
+        print(
+            "ANALYTICS SCHEDULER: AI analysis unavailable. "
+            "Publishing deterministic findings if available.",
+            flush=True,
+        )
+
+        summary = (
+            "AI analysis was unavailable for this cycle. "
+            "Deterministic server structure findings are shown below."
+        )
 
     analytics_channel = discord.utils.get(
         guild.text_channels,
         name="analytics",
-    )
-
-    print(
-        f"ANALYTICS SCHEDULER: Found analytics channel: {analytics_channel}",
-        flush=True,
     )
 
     if analytics_channel is None:
@@ -80,74 +142,100 @@ async def run_analytics_cycle(guild: discord.Guild):
 
     embed.add_field(
         name="🤖 AI Provider",
-        value=str(provider or "Unknown")[:1024],
+        value=str(provider or "Unavailable")[:1024],
         inline=True,
     )
 
-    observations = analysis.get("observations", [])
+    if report.get("total_messages") is not None:
+        embed.add_field(
+            name="💬 Messages",
+            value=str(report["total_messages"])[:1024],
+            inline=True,
+        )
 
-    if isinstance(observations, list) and observations:
-        observation_items = []
+    if report.get("unique_members") is not None:
+        embed.add_field(
+            name="👥 Active Members",
+            value=str(report["unique_members"])[:1024],
+            inline=True,
+        )
 
-        for observation in observations[:5]:
-            if not isinstance(observation, dict):
-                continue
-
-            title = str(observation.get("title", "Observation"))
-            description = str(
-                observation.get("description", "No description.")
-            )
-
-            observation_items.append(
-                f"**{title}**\n{description}"
-            )
-
-        observation_text = "\n\n".join(observation_items)
-
-        if observation_text:
-            embed.add_field(
-                name="🔎 Observations",
-                value=observation_text[:1024],
-                inline=False,
-            )
-
-    proposals = analysis.get("proposals", [])
-
-    if not isinstance(proposals, list):
-        proposals = []
-
-    if proposals:
-        proposal_items = []
-
-        for proposal in proposals[:5]:
-            if not isinstance(proposal, dict):
-                continue
-
-            title = str(proposal.get("title", "Proposal"))
-            description = str(
-                proposal.get("description", "No description.")
-            )
-
-            proposal_items.append(
-                f"**{title}**\n{description}"
-            )
-
-        proposal_text = "\n\n".join(proposal_items)
-
-        if proposal_text:
-            embed.add_field(
-                name="💡 Proposals",
-                value=proposal_text[:1024],
-                inline=False,
-            )
-
-    embed.set_footer(
-        text=f"AI provider: {provider or 'Unknown'}"
+    structure_summary = (
+        structure_result.get("summary", {})
+        if isinstance(structure_result, dict)
+        else {}
     )
 
-    print(
-        f"ANALYTICS SCHEDULER: Sending report to #{analytics_channel.name}.",
-        flush=True,
+    finding_count = structure_summary.get("finding_count", 0)
+
+    embed.add_field(
+        name=f"🧠 Deterministic Findings ({finding_count})",
+        value=format_structure_findings(structure_result),
+        inline=False,
+    )
+
+    proposals = []
+
+    if isinstance(analysis, dict):
+        observations = analysis.get("observations", [])
+
+        if isinstance(observations, list) and observations:
+            observation_items = []
+
+            for observation in observations[:5]:
+                if not isinstance(observation, dict):
+                    continue
+
+                title = str(observation.get("title", "Observation"))
+                description = str(
+                    observation.get("description", "No description.")
+                )
+
+                observation_items.append(
+                    f"**{title[:200]}**\n{description[:500]}"
+                )
+
+            observation_text = "\n\n".join(observation_items)
+
+            if observation_text:
+                embed.add_field(
+                    name="🔎 AI Observations",
+                    value=observation_text[:1024],
+                    inline=False,
+                )
+
+        proposals = analysis.get("proposals", [])
+
+        if not isinstance(proposals, list):
+            proposals = []
+
+        if proposals:
+            proposal_items = []
+
+            for proposal in proposals[:5]:
+                if not isinstance(proposal, dict):
+                    continue
+
+                title = str(proposal.get("title", "Proposal"))
+                description = str(
+                    proposal.get("description", "No description.")
+                )
+
+                proposal_items.append(
+                    f"**{title[:200]}**\n{description[:500]}"
+                )
+
+            proposal_text = "\n\n".join(proposal_items)
+
+            if proposal_text:
+                embed.add_field(
+                    name="💡 AI Proposals",
+                    value=proposal_text[:1024],
+                    inline=False,
+                )
+
+    embed.set_footer(
+        text=f"AI provider: {provider or 'Unavailable'}"
     )
 
     try:
@@ -158,12 +246,20 @@ async def run_analytics_cycle(guild: discord.Guild):
             flush=True,
         )
 
-    except discord.HTTPException as e:
+    except discord.HTTPException as exc:
         print(
             "ANALYTICS SCHEDULER: Failed to send report.",
             flush=True,
         )
-        print(repr(e), flush=True)
+        print(repr(exc), flush=True)
+        return
+
+    if analysis is None:
+        print(
+            "ANALYTICS SCHEDULER: Skipping proposal processing "
+            "because valid AI analysis is unavailable.",
+            flush=True,
+        )
         return
 
     print(
@@ -177,12 +273,12 @@ async def run_analytics_cycle(guild: discord.Guild):
             proposals=proposals,
             send_function=analytics_channel.send,
         )
-    except Exception as e:
+    except Exception as exc:
         print(
             "ANALYTICS SCHEDULER: Proposal processing failed.",
             flush=True,
         )
-        print(repr(e), flush=True)
+        print(repr(exc), flush=True)
         return
 
     print(
@@ -198,11 +294,11 @@ async def analytics_scheduler(bot):
         for guild in bot.guilds:
             try:
                 await run_analytics_cycle(guild)
-            except Exception as e:
+            except Exception as exc:
                 print(
                     f"ANALYTICS SCHEDULER: Guild {guild.id} failed.",
                     flush=True,
                 )
-                print(repr(e), flush=True)
+                print(repr(exc), flush=True)
 
         await asyncio.sleep(ANALYTICS_INTERVAL)
