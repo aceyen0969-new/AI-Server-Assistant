@@ -1,4 +1,3 @@
-
 import discord
 
 from security.approval import (
@@ -15,8 +14,9 @@ def _is_valid_approval(
     action: dict,
     reason: str | None,
     approval_request_id: str | None,
+    guild_id: int | None = None,
 ) -> bool:
-    """Validate approval and log the exact reason for rejection."""
+    """Validate an approval before claiming it for execution."""
 
     def reject(message: str) -> bool:
         print(f"APPROVAL DEBUG: {message}")
@@ -43,13 +43,21 @@ def _is_valid_approval(
         return reject("Request is already executing.")
 
     if request.completed:
-        status = getattr(request, "status", "unknown")
         return reject(
-            f"Request has already been used. Status: {status}"
+            f"Request has already been used. Status: {request.status}"
         )
 
     if is_expired(approval_request_id):
         return reject("Approval request expired.")
+
+    if type(guild_id) is not int or guild_id <= 0:
+        return reject("Execution guild ID is invalid.")
+
+    if request.guild_id != guild_id:
+        return reject("Request belongs to a different server.")
+
+    if type(request.approver_id) is not int or request.approver_id <= 0:
+        return reject("Request has no valid bound approver.")
 
     if not isinstance(action, dict):
         return reject("Action payload is not a dictionary.")
@@ -84,6 +92,12 @@ def _is_valid_approval(
     if request.action != snapshot.get("action"):
         return reject("Stored action differs from approved snapshot.")
 
+    if request.target_id != snapshot.get("target_id"):
+        return reject("Stored target ID changed after approval.")
+
+    if request.target_name != snapshot.get("target_name"):
+        return reject("Stored target name changed after approval.")
+
     if request.data != snapshot.get("data"):
         return reject("Stored request data changed after approval.")
 
@@ -92,6 +106,12 @@ def _is_valid_approval(
 
     if reason != snapshot.get("reason"):
         return reject("Execution reason differs from approved reason.")
+
+    if request.guild_id != snapshot.get("guild_id"):
+        return reject("Stored server binding changed after approval.")
+
+    if request.approver_id != snapshot.get("approver_id"):
+        return reject("Stored approver binding changed after approval.")
 
     print("APPROVAL DEBUG: All validation checks passed.")
     return True
@@ -110,12 +130,8 @@ async def _execute_action_impl(
         channel_id = action.get("channel_id")
         category_id = action.get("category_id")
 
-        if type(channel_id) is not int:
-            print("ACTION EXECUTOR: Invalid channel ID.")
-            return False
-
-        if type(category_id) is not int:
-            print("ACTION EXECUTOR: Invalid category ID.")
+        if type(channel_id) is not int or type(category_id) is not int:
+            print("ACTION EXECUTOR: Invalid channel or category ID.")
             return False
 
         channel = guild.get_channel(channel_id)
@@ -125,12 +141,8 @@ async def _execute_action_impl(
             print("ACTION EXECUTOR: Source channel not found.")
             return False
 
-        if category is None:
-            print("ACTION EXECUTOR: Target category not found.")
-            return False
-
         if not isinstance(category, discord.CategoryChannel):
-            print("ACTION EXECUTOR: Target is not a category.")
+            print("ACTION EXECUTOR: Target category not found or invalid.")
             return False
 
         if not isinstance(
@@ -173,10 +185,7 @@ async def _execute_action_impl(
         channel = guild.get_channel(channel_id)
 
         if channel is None:
-            print(
-                f"ACTION EXECUTOR: Channel {channel_id} was not found "
-                "in the current guild cache."
-            )
+            print("ACTION EXECUTOR: Channel not found in this guild.")
             return False
 
         if not isinstance(
@@ -216,12 +225,7 @@ async def _execute_action_impl(
             print("ACTION EXECUTOR: Unsupported channel type.")
             return False
 
-        existing_channel = discord.utils.get(
-            guild.channels,
-            name=name,
-        )
-
-        if existing_channel is not None:
+        if discord.utils.get(guild.channels, name=name) is not None:
             print("ACTION EXECUTOR: A channel with that name exists.")
             return False
 
@@ -246,21 +250,29 @@ async def execute_action(
     reason: str | None = None,
     approval_request_id: str | None = None,
 ) -> bool:
-    """Execute an organization action through a single-use approval."""
+    """Execute an organization action through a server-bound approval."""
+
+    if guild is None:
+        print("ACTION EXECUTOR: Missing guild.")
+        return False
 
     if not _is_valid_approval(
         action=action,
         reason=reason,
         approval_request_id=approval_request_id,
+        guild_id=guild.id,
     ):
         print("ACTION EXECUTOR: Blocked invalid approval.")
         return False
 
-    # Claim the request before the first Discord API call.
     claimed = claim_approved_request(
         request_id=approval_request_id,
         action=action,
         reason=reason,
+        guild_id=guild.id,
+        approver_id=get_approval_request(
+            approval_request_id
+        ).approver_id,
     )
 
     if not claimed:

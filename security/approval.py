@@ -20,13 +20,17 @@ class ApprovalRequest:
     approved: bool = False
     cancelled: bool = False
 
+    # Security bindings
+    guild_id: int | None = None
+    approver_id: int | None = None
+
     # Execution lifecycle
     status: str = "pending"
     executing: bool = False
     completed: bool = False
     execution_succeeded: bool | None = None
 
-    # Immutable-in-practice snapshot captured at approval time
+    # Snapshot captured at approval time
     approved_snapshot: dict[str, Any] | None = None
 
 
@@ -41,6 +45,8 @@ def create_approval_request(
     reason: str = "",
     data: dict[str, Any] | None = None,
     expires_in: float = DEFAULT_EXPIRATION_SECONDS,
+    guild_id: int | None = None,
+    approver_id: int | None = None,
 ) -> ApprovalRequest:
     if not isinstance(expires_in, (int, float)):
         raise TypeError("expires_in must be a number.")
@@ -63,6 +69,21 @@ def create_approval_request(
     if data is not None and not isinstance(data, dict):
         raise TypeError("data must be a dictionary.")
 
+    if guild_id is not None and (
+        type(guild_id) is not int or guild_id <= 0
+    ):
+        raise ValueError("guild_id must be a positive integer.")
+
+    if approver_id is not None and (
+        type(approver_id) is not int or approver_id <= 0
+    ):
+        raise ValueError("approver_id must be a positive integer.")
+
+    if (guild_id is None) != (approver_id is None):
+        raise ValueError(
+            "guild_id and approver_id must be provided together."
+        )
+
     now = time.time()
 
     request = ApprovalRequest(
@@ -74,6 +95,8 @@ def create_approval_request(
         data=deepcopy(data) if data is not None else {},
         created_at=now,
         expires_at=now + expires_in,
+        guild_id=guild_id,
+        approver_id=approver_id,
     )
 
     approval_requests[request_id] = request
@@ -115,13 +138,14 @@ def approve_request(request_id: str) -> bool:
     ):
         return False
 
-    # Capture the exact request contents at approval time.
     request.approved_snapshot = {
         "action": request.action,
         "target_id": request.target_id,
         "target_name": request.target_name,
         "reason": request.reason,
         "data": deepcopy(request.data),
+        "guild_id": request.guild_id,
+        "approver_id": request.approver_id,
     }
 
     request.approved = True
@@ -133,8 +157,10 @@ def claim_approved_request(
     request_id: str,
     action: dict[str, Any],
     reason: str | None,
+    guild_id: int | None = None,
+    approver_id: int | None = None,
 ) -> bool:
-    """Atomically claim an approved request for one execution."""
+    """Claim an approved request for exactly one execution."""
 
     request = get_approval_request(request_id)
 
@@ -169,33 +195,43 @@ def claim_approved_request(
         if key != "action"
     }
 
-    if action_type != snapshot["action"]:
+    if action_type != snapshot.get("action"):
         return False
 
-    if action_data != snapshot["data"]:
+    if action_data != snapshot.get("data"):
         return False
 
-    if request.action != snapshot["action"]:
+    if request.action != snapshot.get("action"):
         return False
 
-    if request.target_id != snapshot["target_id"]:
+    if request.target_id != snapshot.get("target_id"):
         return False
 
-    if request.target_name != snapshot["target_name"]:
+    if request.target_name != snapshot.get("target_name"):
         return False
 
-    if request.reason != snapshot["reason"]:
+    if request.reason != snapshot.get("reason"):
         return False
 
-    if request.data != snapshot["data"]:
+    if request.data != snapshot.get("data"):
         return False
 
-    if reason != snapshot["reason"]:
+    if reason != snapshot.get("reason"):
+        return False
+
+    if request.guild_id != snapshot.get("guild_id"):
+        return False
+
+    if request.approver_id != snapshot.get("approver_id"):
+        return False
+
+    if guild_id != snapshot.get("guild_id"):
+        return False
+
+    if approver_id != snapshot.get("approver_id"):
         return False
 
     # No await occurs before this state transition.
-    # A second interaction in the same event loop cannot
-    # claim this request once it is marked as executing.
     request.executing = True
     request.status = "executing"
     return True

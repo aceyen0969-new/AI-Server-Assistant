@@ -42,17 +42,25 @@ async def setup(bot):
             )
             return
 
-        planned = await plan_actions(
-            guild,
-            request,
-        )
+        if not isinstance(request, str) or not request.strip():
+            await interaction.followup.send(
+                "Please describe the organization change you want."
+            )
+            return
 
-        actions = planned.get(
-            "actions",
-            [],
-        )
+        request = request.strip()
 
-        if not actions:
+        planned = await plan_actions(guild, request)
+
+        if not isinstance(planned, dict):
+            await interaction.followup.send(
+                "The AI returned an invalid action plan."
+            )
+            return
+
+        actions = planned.get("actions", [])
+
+        if not isinstance(actions, list) or not actions:
             await interaction.followup.send(
                 "I couldn't turn that request into a valid "
                 "server organization action."
@@ -62,37 +70,29 @@ async def setup(bot):
         created = 0
 
         for action in actions:
+            if not isinstance(action, dict):
+                continue
 
-            action_type = action.get(
-                "action"
-            )
+            action_type = action.get("action")
 
             # ========================================
             # MOVE CHANNEL
             # ========================================
 
             if action_type == "move_channel":
+                channel_id = action.get("channel_id")
+                category_id = action.get("category_id")
 
-                channel_id = action.get(
-                    "channel_id"
-                )
-
-                category_id = action.get(
-                    "category_id"
-                )
-
-                channel = guild.get_channel(
-                    channel_id
-                )
-
-                category = guild.get_channel(
-                    category_id
-                )
-
-                if channel is None:
+                if type(channel_id) is not int:
                     continue
 
-                if category is None:
+                if type(category_id) is not int:
+                    continue
+
+                channel = guild.get_channel(channel_id)
+                category = guild.get_channel(category_id)
+
+                if channel is None or category is None:
                     continue
 
                 if not isinstance(
@@ -110,6 +110,9 @@ async def setup(bot):
                 ):
                     continue
 
+                if channel.category_id == category.id:
+                    continue
+
                 action_request = ActionRequest(
                     action="move_channel",
                     target_id=channel.id,
@@ -121,19 +124,15 @@ async def setup(bot):
                     },
                 )
 
-                decision = evaluate_action(
-                    action_request
-                )
+                decision = evaluate_action(action_request)
 
-                if not decision["allowed"] and not decision["requires_approval"]:
+                if not decision.get("allowed", False):
                     continue
 
-                if not decision["requires_approval"]:
+                if not decision.get("requires_approval", False):
                     continue
 
-                request_id = str(
-                    uuid.uuid4()
-                )
+                request_id = str(uuid.uuid4())
 
                 create_approval_request(
                     request_id=request_id,
@@ -145,13 +144,17 @@ async def setup(bot):
                         "channel_id": channel.id,
                         "category_id": category.id,
                     },
+                    guild_id=guild.id,
+                    approver_id=guild.owner_id,
                 )
 
                 embed = discord.Embed(
-                    title="AI Organization Request",
+                    title="🛡️ AI Organization Request",
                     description=(
-                        f"**Action:** `move_channel`\n"
+                        "**Action:** `move_channel`\n"
                         f"**Channel:** {channel.mention}\n"
+                        f"**Current Category:** "
+                        f"`{channel.category.name if channel.category else 'None'}`\n"
                         f"**New Category:** `{category.name}`\n"
                         f"**Request:** {request}\n\n"
                         "This change requires server-owner approval."
@@ -160,7 +163,7 @@ async def setup(bot):
                 )
 
                 embed.set_footer(
-                    text="AI Server Assistant"
+                    text="Only the server owner can approve this request."
                 )
 
                 view = ApprovalView(
@@ -175,7 +178,6 @@ async def setup(bot):
                 )
 
                 created += 1
-
                 continue
 
             # ========================================
@@ -183,18 +185,13 @@ async def setup(bot):
             # ========================================
 
             if action_type == "rename_channel":
+                channel_id = action.get("channel_id")
+                new_name = action.get("new_name")
 
-                channel_id = action.get(
-                    "channel_id"
-                )
+                if type(channel_id) is not int:
+                    continue
 
-                new_name = action.get(
-                    "new_name"
-                )
-
-                channel = guild.get_channel(
-                    channel_id
-                )
+                channel = guild.get_channel(channel_id)
 
                 if channel is None:
                     continue
@@ -208,18 +205,15 @@ async def setup(bot):
                 ):
                     continue
 
-                if not isinstance(
-                    new_name,
-                    str,
-                ):
+                if not isinstance(new_name, str):
                     continue
 
                 new_name = new_name.strip()
 
-                if not new_name:
+                if not new_name or len(new_name) > 100:
                     continue
 
-                if len(new_name) > 100:
+                if channel.name == new_name:
                     continue
 
                 action_request = ActionRequest(
@@ -233,19 +227,15 @@ async def setup(bot):
                     },
                 )
 
-                decision = evaluate_action(
-                    action_request
-                )
+                decision = evaluate_action(action_request)
 
-                if not decision["allowed"] and not decision["requires_approval"]:
+                if not decision.get("allowed", False):
                     continue
 
-                if not decision["requires_approval"]:
+                if not decision.get("requires_approval", False):
                     continue
 
-                request_id = str(
-                    uuid.uuid4()
-                )
+                request_id = str(uuid.uuid4())
 
                 create_approval_request(
                     request_id=request_id,
@@ -257,13 +247,16 @@ async def setup(bot):
                         "channel_id": channel.id,
                         "new_name": new_name,
                     },
+                    guild_id=guild.id,
+                    approver_id=guild.owner_id,
                 )
 
                 embed = discord.Embed(
-                    title="AI Organization Request",
+                    title="🛡️ AI Organization Request",
                     description=(
-                        f"**Action:** `rename_channel`\n"
+                        "**Action:** `rename_channel`\n"
                         f"**Channel:** {channel.mention}\n"
+                        f"**Current Name:** `{channel.name}`\n"
                         f"**New Name:** `{new_name}`\n"
                         f"**Request:** {request}\n\n"
                         "This change requires server-owner approval."
@@ -272,7 +265,7 @@ async def setup(bot):
                 )
 
                 embed.set_footer(
-                    text="AI Server Assistant"
+                    text="Only the server owner can approve this request."
                 )
 
                 view = ApprovalView(
@@ -287,11 +280,23 @@ async def setup(bot):
                 )
 
                 created += 1
-
                 continue
 
-        if created == 0:
+            print(
+                "ORGANIZE: Ignoring unsupported action: "
+                f"{action_type!r}",
+                flush=True,
+            )
 
+        if created == 0:
             await interaction.followup.send(
-                "No valid organization actions were created."
+                "No valid organization actions were created. "
+                "The actions may have been unsupported, already applied, "
+                "or rejected by the security policy."
+            )
+        else:
+            print(
+                f"ORGANIZE: Created {created} approval request(s) "
+                f"for guild {guild.id}.",
+                flush=True,
             )

@@ -1,4 +1,3 @@
-
 import discord
 
 from security.approval import (
@@ -18,7 +17,6 @@ from security.policies import get_safety_decision
 
 
 class ApprovalView(discord.ui.View):
-
     def __init__(
         self,
         request_id: str,
@@ -31,6 +29,26 @@ class ApprovalView(discord.ui.View):
         if not isinstance(request_id, str) or not request_id.strip():
             raise ValueError("request_id must be a non-empty string.")
 
+        if type(allowed_user_id) is not int or allowed_user_id <= 0:
+            raise ValueError("allowed_user_id must be a positive integer.")
+
+        if guild is None:
+            raise ValueError("guild is required.")
+
+        request = get_approval_request(request_id)
+
+        if request is None:
+            raise ValueError("Approval request does not exist.")
+
+        if request.guild_id != guild.id:
+            raise ValueError("Approval request belongs to another server.")
+
+        if request.approver_id != allowed_user_id:
+            raise ValueError("Approver does not match the approval request.")
+
+        if allowed_user_id != guild.owner_id:
+            raise ValueError("Only the current server owner can approve.")
+
         self.request_id = request_id
         self.allowed_user_id = allowed_user_id
         self.guild = guild
@@ -39,9 +57,19 @@ class ApprovalView(discord.ui.View):
         self,
         interaction: discord.Interaction,
     ) -> bool:
-        if interaction.user.id != self.allowed_user_id:
+        request = get_approval_request(self.request_id)
+
+        if (
+            interaction.guild_id != self.guild.id
+            or self.guild.owner_id != self.allowed_user_id
+            or interaction.user.id != self.allowed_user_id
+            or request is None
+            or request.guild_id != self.guild.id
+            or request.approver_id != self.allowed_user_id
+        ):
             await interaction.response.send_message(
-                "You are not authorized to approve this action.",
+                "You are not authorized to approve this request "
+                "from this server.",
                 ephemeral=True,
             )
             return False
@@ -82,6 +110,21 @@ class ApprovalView(discord.ui.View):
             )
             return
 
+        if (
+            request.guild_id != self.guild.id
+            or request.approver_id != self.allowed_user_id
+            or self.guild.owner_id != self.allowed_user_id
+        ):
+            await interaction.response.edit_message(
+                content=(
+                    "This request's server or approver binding "
+                    "is no longer valid."
+                ),
+                embed=None,
+                view=None,
+            )
+            return
+
         if is_expired(self.request_id):
             await self.show_expired(interaction)
             return
@@ -94,9 +137,9 @@ class ApprovalView(discord.ui.View):
             )
             return
 
-        if request.approved:
+        if request.approved or request.status != "pending":
             await interaction.response.edit_message(
-                content="This request has already been approved.",
+                content="This request has already been used.",
                 embed=None,
                 view=None,
             )
@@ -110,10 +153,7 @@ class ApprovalView(discord.ui.View):
             data=request.data,
         )
 
-        decision_allowed = can_execute_after_approval(
-            action_request
-        )
-
+        decision_allowed = can_execute_after_approval(action_request)
         decision = get_safety_decision(request.action)
 
         if (
@@ -145,10 +185,7 @@ class ApprovalView(discord.ui.View):
             )
             return
 
-        await self.execute_approved_action(
-            interaction,
-            request,
-        )
+        await self.execute_approved_action(interaction, request)
 
     async def execute_approved_action(
         self,
@@ -162,7 +199,6 @@ class ApprovalView(discord.ui.View):
             **request.data,
         }
 
-        # IMPORTANT: pass the request ID and approved reason.
         success = await execute_action(
             self.guild,
             action,
@@ -217,10 +253,7 @@ class ApprovalView(discord.ui.View):
                 ),
                 color=discord.Color.green(),
             )
-
-            embed.set_footer(
-                text=f"Approved by {interaction.user}"
-            )
+            embed.set_footer(text=f"Approved by {interaction.user}")
 
             await interaction.response.edit_message(
                 embed=embed,
@@ -248,10 +281,7 @@ class ApprovalView(discord.ui.View):
                 ),
                 color=discord.Color.green(),
             )
-
-            embed.set_footer(
-                text=f"Approved by {interaction.user}"
-            )
+            embed.set_footer(text=f"Approved by {interaction.user}")
 
             await interaction.response.edit_message(
                 embed=embed,
@@ -288,13 +318,25 @@ class ApprovalView(discord.ui.View):
             )
             return
 
+        if (
+            request.guild_id != self.guild.id
+            or request.approver_id != self.allowed_user_id
+            or self.guild.owner_id != self.allowed_user_id
+        ):
+            await interaction.response.edit_message(
+                content="This request's security binding is invalid.",
+                embed=None,
+                view=None,
+            )
+            return
+
         if is_expired(self.request_id):
             await self.show_expired(interaction)
             return
 
-        if request.approved:
+        if request.approved or request.status != "pending":
             await interaction.response.edit_message(
-                content="This request has already been approved.",
+                content="This request has already been used.",
                 embed=None,
                 view=None,
             )
