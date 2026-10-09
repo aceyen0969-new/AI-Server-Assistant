@@ -23,14 +23,16 @@ async def setup(bot):
         new_name: str,
         reason: str,
     ):
-        if interaction.guild is None:
+        guild = interaction.guild
+
+        if guild is None:
             await interaction.response.send_message(
                 "This command can only be used inside a server.",
                 ephemeral=True,
             )
             return
 
-        if target.guild.id != interaction.guild.id:
+        if target.guild.id != guild.id:
             await interaction.response.send_message(
                 "The target channel must belong to this server.",
                 ephemeral=True,
@@ -65,6 +67,8 @@ async def setup(bot):
                 "channel_id": target.id,
                 "new_name": new_name,
             },
+            guild_id=guild.id,
+            approver_id=guild.owner_id,
         )
 
         embed = discord.Embed(
@@ -85,8 +89,8 @@ async def setup(bot):
 
         view = ApprovalView(
             request_id=request_id,
-            allowed_user_id=interaction.guild.owner_id,
-            guild=interaction.guild,
+            allowed_user_id=guild.owner_id,
+            guild=guild,
         )
 
         await interaction.response.send_message(

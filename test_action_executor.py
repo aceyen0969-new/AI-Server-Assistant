@@ -16,6 +16,8 @@ class TestActionExecutorSecurity(unittest.TestCase):
 
     def setUp(self):
         self.request_id = "test-request-123"
+        self.guild_id = 98765
+        self.approver_id = 24680
 
         self.action = {
             "action": "rename_channel",
@@ -34,10 +36,13 @@ class TestActionExecutorSecurity(unittest.TestCase):
                 "new_name": "new-channel-name",
             },
             reason=self.reason,
+            guild_id=self.guild_id,
+            approver_id=self.approver_id,
             approved=True,
             cancelled=False,
             executing=False,
             completed=False,
+            status="approved",
             approved_snapshot={
                 "action": "rename_channel",
                 "target_id": None,
@@ -47,6 +52,8 @@ class TestActionExecutorSecurity(unittest.TestCase):
                     "channel_id": 12345,
                     "new_name": "new-channel-name",
                 },
+                "guild_id": self.guild_id,
+                "approver_id": self.approver_id,
             },
         )
 
@@ -77,6 +84,7 @@ class TestActionExecutorSecurity(unittest.TestCase):
             "action": self.action,
             "reason": self.reason,
             "approval_request_id": self.request_id,
+            "guild_id": self.guild_id,
         }
         arguments.update(overrides)
         return _is_valid_approval(**arguments)
@@ -138,25 +146,21 @@ class TestActionExecutorSecurity(unittest.TestCase):
             **self.action,
             "action": "create_channel",
         }
-        self.assertFalse(
-            self.check_action(action=changed_action)
-        )
+        self.assertFalse(self.check_action(action=changed_action))
 
     def test_payload_mismatch_is_rejected(self):
         changed_action = {
             **self.action,
             "new_name": "different-name",
         }
-        self.assertFalse(
-            self.check_action(action=changed_action)
-        )
+        self.assertFalse(self.check_action(action=changed_action))
 
     def test_reason_mismatch_is_rejected(self):
         self.assertFalse(
             self.check_action(reason="Different reason")
         )
 
-    def test_mutated_approved_snapshot_is_rejected(self):
+    def test_mutated_request_data_is_rejected(self):
         self.request.data["new_name"] = "tampered-name"
         self.assertFalse(self.check_action())
 
@@ -168,10 +172,29 @@ class TestActionExecutorSecurity(unittest.TestCase):
         self.request.completed = True
         self.assertFalse(self.check_action())
 
+    def test_wrong_guild_is_rejected(self):
+        self.assertFalse(self.check_action(guild_id=123456))
+
+    def test_missing_guild_id_is_rejected(self):
+        self.assertFalse(self.check_action(guild_id=None))
+
+    def test_mutated_guild_binding_is_rejected(self):
+        self.request.guild_id = 123456
+        self.assertFalse(self.check_action())
+
+    def test_mutated_approver_binding_is_rejected(self):
+        self.request.approver_id = 99999
+        self.assertFalse(self.check_action())
+
+    def test_missing_approver_is_rejected(self):
+        self.request.approver_id = None
+        self.assertFalse(self.check_action())
+
 
 class TestApprovalExecutionLifecycle(unittest.TestCase):
 
     def setUp(self):
+        self.previous_requests = dict(approval_requests)
         approval_requests.clear()
         self.request_id = "lifecycle-test"
 
@@ -187,6 +210,7 @@ class TestApprovalExecutionLifecycle(unittest.TestCase):
 
     def tearDown(self):
         approval_requests.clear()
+        approval_requests.update(self.previous_requests)
 
     def test_request_can_only_be_claimed_once(self):
         self.assertTrue(approve_request(self.request_id))
@@ -305,6 +329,28 @@ class TestApprovalExecutionLifecycle(unittest.TestCase):
                 self.request_id,
                 action,
                 "Lifecycle test",
+            )
+        )
+
+    def test_guild_binding_must_match_snapshot(self):
+        self.assertTrue(approve_request(self.request_id))
+
+        request = approval_requests[self.request_id]
+        request.guild_id = 111
+
+        action = {
+            "action": "rename_channel",
+            "channel_id": 123,
+            "new_name": "renamed",
+        }
+
+        self.assertFalse(
+            claim_approved_request(
+                self.request_id,
+                action,
+                "Lifecycle test",
+                guild_id=111,
+                approver_id=None,
             )
         )
 
