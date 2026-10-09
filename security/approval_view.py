@@ -1,9 +1,11 @@
+
 import discord
 
 from security.approval import (
     approve_request,
     cancel_request,
     get_approval_request,
+    is_expired,
 )
 
 from security.actions import (
@@ -32,7 +34,7 @@ class ApprovalView(discord.ui.View):
     async def interaction_check(
         self,
         interaction: discord.Interaction,
-    ):
+    ) -> bool:
         if interaction.user.id != self.allowed_user_id:
             await interaction.response.send_message(
                 "You are not authorized to approve this action.",
@@ -41,6 +43,20 @@ class ApprovalView(discord.ui.View):
             return False
 
         return True
+
+    async def show_expired(
+        self,
+        interaction: discord.Interaction,
+    ):
+        await interaction.response.edit_message(
+            content=(
+                "This approval request has expired. "
+                "Please create a new request if the action "
+                "is still needed."
+            ),
+            embed=None,
+            view=None,
+        )
 
     @discord.ui.button(
         label="Confirm",
@@ -62,6 +78,10 @@ class ApprovalView(discord.ui.View):
                 embed=None,
                 view=None,
             )
+            return
+
+        if is_expired(self.request_id):
+            await self.show_expired(interaction)
             return
 
         if request.cancelled:
@@ -94,23 +114,21 @@ class ApprovalView(discord.ui.View):
             await interaction.response.edit_message(
                 content=(
                     "Action blocked.\n\n"
-                    "The security policy no longer "
-                    "allows this action."
+                    "The security policy does not allow "
+                    "this action to be executed after approval."
                 ),
                 embed=None,
                 view=None,
             )
             return
 
-        success = approve_request(
-            self.request_id
-        )
+        if not approve_request(self.request_id):
+            if is_expired(self.request_id):
+                await self.show_expired(interaction)
+                return
 
-        if not success:
             await interaction.response.edit_message(
-                content=(
-                    "This request could not be approved."
-                ),
+                content="This request could not be approved.",
                 embed=None,
                 view=None,
             )
@@ -126,7 +144,7 @@ class ApprovalView(discord.ui.View):
         interaction: discord.Interaction,
         request,
     ):
-        """Execute an approved action using the central executor."""
+        """Execute an approved organization action."""
 
         action = {
             "action": request.action,
@@ -139,43 +157,30 @@ class ApprovalView(discord.ui.View):
         )
 
         if not success:
-
             await interaction.response.edit_message(
                 content=(
                     "The action was approved, but Discord "
                     "could not complete it.\n\n"
-                    "Check the bot's permissions and "
-                    "make sure the target still exists."
+                    "Check the bot's permissions and whether "
+                    "the target still exists."
                 ),
                 embed=None,
                 view=None,
             )
-
             return
 
         if request.action == "move_channel":
+            channel_id = request.data.get("channel_id")
+            category_id = request.data.get("category_id")
 
-            channel_id = request.data.get(
-                "channel_id"
-            )
-
-            category_id = request.data.get(
-                "category_id"
-            )
-
-            channel = self.guild.get_channel(
-                channel_id
-            )
-
-            category = self.guild.get_channel(
-                category_id
-            )
+            channel = self.guild.get_channel(channel_id)
+            category = self.guild.get_channel(category_id)
 
             if channel is None:
                 await interaction.response.edit_message(
                     content=(
-                        "The channel was moved, "
-                        "but it could no longer be found."
+                        "The channel was moved, but it could "
+                        "no longer be found."
                     ),
                     embed=None,
                     view=None,
@@ -209,7 +214,36 @@ class ApprovalView(discord.ui.View):
                 embed=embed,
                 view=None,
             )
+            return
 
+        if request.action == "rename_channel":
+            channel_id = request.data.get("channel_id")
+            channel = self.guild.get_channel(channel_id)
+
+            channel_name = (
+                channel.mention
+                if channel is not None
+                else "Unknown channel"
+            )
+
+            embed = discord.Embed(
+                title="Channel Renamed",
+                description=(
+                    f"**Channel:** {channel_name}\n"
+                    f"**New Name:** `{request.data.get('new_name', '')}`\n"
+                    f"**Reason:** {request.reason}"
+                ),
+                color=discord.Color.green(),
+            )
+
+            embed.set_footer(
+                text=f"Approved by {interaction.user}"
+            )
+
+            await interaction.response.edit_message(
+                embed=embed,
+                view=None,
+            )
             return
 
         await interaction.response.edit_message(
@@ -243,6 +277,10 @@ class ApprovalView(discord.ui.View):
             )
             return
 
+        if is_expired(self.request_id):
+            await self.show_expired(interaction)
+            return
+
         if request.approved:
             await interaction.response.edit_message(
                 content="This request has already been approved.",
@@ -259,11 +297,11 @@ class ApprovalView(discord.ui.View):
             )
             return
 
-        success = cancel_request(
-            self.request_id
-        )
+        if not cancel_request(self.request_id):
+            if is_expired(self.request_id):
+                await self.show_expired(interaction)
+                return
 
-        if not success:
             await interaction.response.edit_message(
                 content="This request could not be cancelled.",
                 embed=None,
@@ -273,5 +311,6 @@ class ApprovalView(discord.ui.View):
 
         await interaction.response.edit_message(
             content="Action cancelled.",
+            embed=None,
             view=None,
         )
