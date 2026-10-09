@@ -16,10 +16,6 @@ from ai.health import (
 )
 
 
-# =========================================================
-# PROVIDERS
-# =========================================================
-
 PROVIDERS = [
     ("Gemini", ask_gemini),
     ("Claude", ask_claude),
@@ -27,10 +23,6 @@ PROVIDERS = [
     ("Groq", ask_groq)
 ]
 
-
-# =========================================================
-# PROVIDER TIMEOUTS
-# =========================================================
 
 PROVIDER_TIMEOUTS = {
     "Gemini": 5,
@@ -40,61 +32,41 @@ PROVIDER_TIMEOUTS = {
 }
 
 
-# =========================================================
-# GEMINI QUOTA
-# =========================================================
-
 gemini_quota_reset_time = 0
 
 
-# =========================================================
-# EXTRACT RETRY TIME
-# =========================================================
-
 def extract_retry_seconds(error_text):
-
-    match = re.search(
+    patterns = [
         r"retryDelay['\"]?\s*:\s*['\"]?(\d+)s",
-        error_text
-    )
+        r"retry\s+in\s+(\d+)\s*seconds?",
+        r"retry\s+after\s+(\d+)\s*seconds?"
+    ]
 
-    if match:
-        return int(match.group(1))
+    for pattern in patterns:
+        match = re.search(pattern, error_text, re.IGNORECASE)
+
+        if match:
+            return int(match.group(1))
 
     return None
 
 
-# =========================================================
-# BUILD CONVERSATION PROMPT
-# =========================================================
-
 def build_prompt(prompt, history):
-
     if not history:
         return prompt
 
     conversation_lines = []
 
     for message in history:
-
         role = message["role"]
         content = message["content"]
 
         if role == "user":
-
-            conversation_lines.append(
-                f"USER:\n{content}"
-            )
-
+            conversation_lines.append(f"USER:\n{content}")
         elif role == "assistant":
+            conversation_lines.append(f"ASSISTANT:\n{content}")
 
-            conversation_lines.append(
-                f"ASSISTANT:\n{content}"
-            )
-
-    conversation = "\n\n".join(
-        conversation_lines
-    )
+    conversation = "\n\n".join(conversation_lines)
 
     return f"""
 {prompt}
@@ -115,257 +87,128 @@ the same assistant throughout.
 """
 
 
-# =========================================================
-# ASK AI
-# =========================================================
-
 async def ask_ai(prompt, history=None):
-
     global gemini_quota_reset_time
 
     if history is None:
         history = []
 
-    full_prompt = build_prompt(
-        prompt,
-        history
-    )
-
-
-    # =====================================================
-    # CHECK GEMINI QUOTA
-    # =====================================================
+    full_prompt = build_prompt(prompt, history)
 
     if gemini_quota_reset_time > 0:
-
-        remaining = (
-            gemini_quota_reset_time
-            - time.time()
-        )
+        remaining = gemini_quota_reset_time - time.time()
 
         if remaining > 0:
-
-            total_seconds = int(
-                remaining
-            )
-
+            total_seconds = int(remaining)
             hours = total_seconds // 3600
-
-            minutes = (
-                total_seconds % 3600
-            ) // 60
-
-            seconds = (
-                total_seconds % 60
-            )
+            minutes = (total_seconds % 3600) // 60
+            seconds = total_seconds % 60
 
             print("----------------------------------------")
+            print("Skipping Gemini because its quota is exhausted.")
             print(
-                "⏭️ Skipping Gemini because "
-                "its quota is exhausted."
-            )
-
-            print(
-                f"⏳ Gemini quota reset in "
+                f"Gemini quota reset in "
                 f"{hours}h {minutes}m {seconds}s"
             )
-
             print("----------------------------------------")
-
         else:
-
             gemini_quota_reset_time = 0
-
-
-    # =====================================================
-    # TRY PROVIDERS
-    # =====================================================
 
     errors = []
 
     for provider_name, provider_function in PROVIDERS:
-
-        # -------------------------------------------------
-        # CHECK HEALTH
-        # -------------------------------------------------
-
-        if not is_available(provider_name):
-
-            print("----------------------------------------")
-            print(
-                f"⏭️ Skipping {provider_name} "
-                f"because it is unavailable."
-            )
-
-            print("----------------------------------------")
-
+        if (
+            provider_name == "Gemini"
+            and gemini_quota_reset_time > time.time()
+        ):
             continue
 
+        if not is_available(provider_name):
+            print("----------------------------------------")
+            print(
+                f"Skipping {provider_name} "
+                f"because it is unavailable."
+            )
+            print("----------------------------------------")
+            continue
 
         print("----------------------------------------")
-        print(
-            f"🤖 Trying {provider_name}..."
-        )
+        print(f"Trying {provider_name}...")
 
+        timeout = PROVIDER_TIMEOUTS.get(provider_name, 5)
 
-        # -------------------------------------------------
-        # GET PROVIDER TIMEOUT
-        # -------------------------------------------------
-
-        timeout = PROVIDER_TIMEOUTS.get(
-            provider_name,
-            5
-        )
-
-        print(
-            f"⏱️ Timeout: {timeout} seconds"
-        )
-
-
-        # -------------------------------------------------
-        # CALL PROVIDER
-        # -------------------------------------------------
+        print(f"Timeout: {timeout} seconds")
 
         try:
-
             answer = await asyncio.wait_for(
                 provider_function(full_prompt),
                 timeout=timeout
             )
 
-
             if not answer:
-
                 raise RuntimeError(
-                    f"{provider_name} returned "
-                    f"an empty response."
+                    f"{provider_name} returned an empty response."
                 )
 
+            mark_success(provider_name)
 
-            # ---------------------------------------------
-            # SUCCESS
-            # ---------------------------------------------
-
-            mark_success(
-                provider_name
-            )
-
-            print(
-                f"✅ {provider_name} "
-                f"responded successfully."
-            )
-
+            print(f"{provider_name} responded successfully.")
             print("----------------------------------------")
-
 
             return {
                 "answer": answer,
                 "provider": provider_name
             }
 
-
-        # -------------------------------------------------
-        # TIMEOUT
-        # -------------------------------------------------
-
         except asyncio.TimeoutError:
-
             error_text = (
                 f"{provider_name} timed out "
                 f"after {timeout} seconds."
             )
 
-            errors.append(
-                error_text
-            )
+            errors.append(error_text)
+            print(error_text)
 
-            print(
-                f"⏱️ {error_text}"
-            )
+            mark_failure(provider_name, 30)
 
-            mark_failure(
-                provider_name,
-                30
-            )
-
-            print(
-                "➡️ Trying next provider..."
-            )
-
-
-        # -------------------------------------------------
-        # FAILURE
-        # -------------------------------------------------
+            print("Trying next provider...")
 
         except Exception as e:
-
             error_text = str(e)
+            errors.append(f"{provider_name}: {error_text}")
 
-            errors.append(
-                f"{provider_name}: {error_text}"
-            )
+            print(f"{provider_name} failed.")
+            print(f"Error: {error_text}")
 
+            retry_seconds = extract_retry_seconds(error_text)
 
-            print(
-                f"❌ {provider_name} failed."
-            )
-
-            print(
-                f"Error: {error_text}"
-            )
-
-
-            # ---------------------------------------------
-            # RETRY TIME
-            # ---------------------------------------------
-
-            retry_seconds = extract_retry_seconds(
-                error_text
-            )
-
-
-            # ---------------------------------------------
-            # MARK PROVIDER UNAVAILABLE
-            # ---------------------------------------------
-
-            mark_failure(
-                provider_name,
+            cooldown = (
                 retry_seconds
+                if retry_seconds is not None and retry_seconds > 0
+                else 30
             )
 
+            mark_failure(provider_name, cooldown)
 
-            # ---------------------------------------------
-            # GEMINI QUOTA
-            # ---------------------------------------------
+            if (
+                provider_name == "Gemini"
+                and retry_seconds is not None
+                and retry_seconds > 0
+            ):
+                gemini_quota_reset_time = (
+                    time.time() + retry_seconds
+                )
 
-            if provider_name == "Gemini":
+                print(
+                    "Gemini will be skipped "
+                    "until its quota reset time."
+                )
 
-                if retry_seconds:
-
-                    gemini_quota_reset_time = (
-                        time.time()
-                        + retry_seconds
-                    )
-
-                    print(
-                        "⏭️ Gemini will be skipped "
-                        "until its quota resets."
-                    )
-
-
-            print(
-                "➡️ Trying next provider..."
-            )
-
-
-    # =====================================================
-    # ALL PROVIDERS FAILED
-    # =====================================================
+            print("Trying next provider...")
 
     print("----------------------------------------")
-    print("❌ ALL AI PROVIDERS FAILED")
+    print("All AI providers failed.")
     print("----------------------------------------")
-
 
     return {
         "answer": None,
