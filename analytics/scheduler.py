@@ -1,23 +1,21 @@
+
 import asyncio
 
 import discord
 
 from analytics.analyzer import analyze_server
-from analytics.proposals import (
-    process_analytics_proposals,
-)
+from analytics.proposals import process_analytics_proposals
 
 
 ANALYTICS_INTERVAL = 86400
 
 
-async def run_analytics_cycle(
-    guild: discord.Guild,
-):
+async def run_analytics_cycle(guild: discord.Guild):
     """Run one scheduled analytics cycle."""
 
     print(
-        "ANALYTICS SCHEDULER: Running analytics..."
+        "ANALYTICS SCHEDULER: Running analytics...",
+        flush=True,
     )
 
     result = await analyze_server(
@@ -26,41 +24,30 @@ async def run_analytics_cycle(
         guild=guild,
     )
 
-    analysis = result.get(
-        "analysis"
-    )
-
-    provider = result.get(
-        "provider"
-    )
+    analysis = result.get("analysis")
+    provider = result.get("provider")
 
     if analysis is None:
-
         print(
-            "ANALYTICS SCHEDULER: "
-            "AI analysis failed."
+            "ANALYTICS SCHEDULER: AI analysis failed.",
+            flush=True,
         )
-
         return
 
     print(
-        "ANALYTICS SCHEDULER: "
-        f"Analysis completed using {provider}."
+        f"ANALYTICS SCHEDULER: Analysis completed using {provider}.",
+        flush=True,
     )
 
-    summary = analysis.get(
-        "summary",
-        "No summary available.",
-    )
+    summary = analysis.get("summary", "No summary available.")
+
+    if not isinstance(summary, str):
+        summary = str(summary)
 
     print(
-        "ANALYTICS SCHEDULER: "
-        f"Summary: {summary}"
+        f"ANALYTICS SCHEDULER: Summary: {summary}",
+        flush=True,
     )
-
-    # ========================================
-    # FIND ANALYTICS CHANNEL
-    # ========================================
 
     analytics_channel = discord.utils.get(
         guild.text_channels,
@@ -68,26 +55,20 @@ async def run_analytics_cycle(
     )
 
     print(
-        "ANALYTICS SCHEDULER: "
-        f"Found analytics channel: {analytics_channel}"
+        f"ANALYTICS SCHEDULER: Found analytics channel: {analytics_channel}",
+        flush=True,
     )
 
     if analytics_channel is None:
-
         print(
-            "ANALYTICS SCHEDULER: "
-            f"No #analytics channel found in {guild.name}."
+            f"ANALYTICS SCHEDULER: No #analytics channel found in {guild.name}.",
+            flush=True,
         )
-
         return
-
-    # ========================================
-    # BUILD REPORT EMBED
-    # ========================================
 
     embed = discord.Embed(
         title="📊 Automatic Server Analytics",
-        description=summary,
+        description=summary[:4096],
         color=discord.Color.blurple(),
     )
 
@@ -99,84 +80,61 @@ async def run_analytics_cycle(
 
     embed.add_field(
         name="🤖 AI Provider",
-        value=provider or "Unknown",
+        value=str(provider or "Unknown")[:1024],
         inline=True,
     )
 
-    observations = analysis.get(
-        "observations",
-        [],
-    )
+    observations = analysis.get("observations", [])
 
-    if observations:
-
-        observation_text = ""
+    if isinstance(observations, list) and observations:
+        observation_items = []
 
         for observation in observations[:5]:
-
-            if not isinstance(
-                observation,
-                dict,
-            ):
+            if not isinstance(observation, dict):
                 continue
 
-            title = observation.get(
-                "title",
-                "Observation",
+            title = str(observation.get("title", "Observation"))
+            description = str(
+                observation.get("description", "No description.")
             )
 
-            description = observation.get(
-                "description",
-                "No description.",
+            observation_items.append(
+                f"**{title}**\n{description}"
             )
 
-            observation_text += (
-                f"**{title}**\n"
-                f"{description}\n\n"
-            )
+        observation_text = "\n\n".join(observation_items)
 
         if observation_text:
-
             embed.add_field(
                 name="🔎 Observations",
                 value=observation_text[:1024],
                 inline=False,
             )
 
-    proposals = analysis.get(
-        "proposals",
-        [],
-    )
+    proposals = analysis.get("proposals", [])
+
+    if not isinstance(proposals, list):
+        proposals = []
 
     if proposals:
-
-        proposal_text = ""
+        proposal_items = []
 
         for proposal in proposals[:5]:
-
-            if not isinstance(
-                proposal,
-                dict,
-            ):
+            if not isinstance(proposal, dict):
                 continue
 
-            title = proposal.get(
-                "title",
-                "Proposal",
+            title = str(proposal.get("title", "Proposal"))
+            description = str(
+                proposal.get("description", "No description.")
             )
 
-            description = proposal.get(
-                "description",
-                "No description.",
+            proposal_items.append(
+                f"**{title}**\n{description}"
             )
 
-            proposal_text += (
-                f"**{title}**\n"
-                f"{description}\n\n"
-            )
+        proposal_text = "\n\n".join(proposal_items)
 
         if proposal_text:
-
             embed.add_field(
                 name="💡 Proposals",
                 value=proposal_text[:1024],
@@ -184,74 +142,67 @@ async def run_analytics_cycle(
             )
 
     embed.set_footer(
-        text=f"AI provider: {provider}"
+        text=f"AI provider: {provider or 'Unknown'}"
     )
 
-    # ========================================
-    # SEND REPORT
-    # ========================================
+    print(
+        f"ANALYTICS SCHEDULER: Sending report to #{analytics_channel.name}.",
+        flush=True,
+    )
 
     try:
-
-        await analytics_channel.send(
-            embed=embed
-        )
+        await analytics_channel.send(embed=embed)
 
         print(
-            "ANALYTICS SCHEDULER: "
-            f"Report sent to #{analytics_channel.name}."
+            f"ANALYTICS SCHEDULER: Report sent to #{analytics_channel.name}.",
+            flush=True,
         )
 
     except discord.HTTPException as e:
-
         print(
-            "ANALYTICS SCHEDULER: "
-            "Failed to send report."
+            "ANALYTICS SCHEDULER: Failed to send report.",
+            flush=True,
         )
-
-        print(
-            repr(e)
-        )
-
+        print(repr(e), flush=True)
         return
 
-    # ========================================
-    # PROCESS ACTIONABLE PROPOSALS
-    # ========================================
+    print(
+        f"ANALYTICS SCHEDULER: Processing {len(proposals)} proposal(s).",
+        flush=True,
+    )
 
-    await process_analytics_proposals(
-        guild=guild,
-        proposals=proposals,
-        send_function=analytics_channel.send,
+    try:
+        await process_analytics_proposals(
+            guild=guild,
+            proposals=proposals,
+            send_function=analytics_channel.send,
+        )
+    except Exception as e:
+        print(
+            "ANALYTICS SCHEDULER: Proposal processing failed.",
+            flush=True,
+        )
+        print(repr(e), flush=True)
+        return
+
+    print(
+        "ANALYTICS SCHEDULER: Analytics cycle completed.",
+        flush=True,
     )
 
 
-async def analytics_scheduler(
-    bot,
-):
+async def analytics_scheduler(bot):
     """Run scheduled analytics for all connected servers."""
 
     while True:
-
         for guild in bot.guilds:
-
             try:
-
-                await run_analytics_cycle(
-                    guild
-                )
-
+                await run_analytics_cycle(guild)
             except Exception as e:
-
                 print(
-                    "ANALYTICS SCHEDULER: "
-                    f"Guild {guild.id} failed."
+                    f"ANALYTICS SCHEDULER: Guild {guild.id} failed.",
+                    flush=True,
                 )
+                print(repr(e), flush=True)
 
-                print(
-                    repr(e)
-                )
-
-        await asyncio.sleep(
-            ANALYTICS_INTERVAL
-        )
+        await asyncio.sleep(ANALYTICS_INTERVAL)
