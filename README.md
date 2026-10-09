@@ -2,121 +2,150 @@
 
 **An AI-powered Discord server assistant built around intelligent automation, controlled server actions, and modular AI systems.**
 
-Quasar is a modular Discord assistant that combines AI-powered reasoning with deterministic server management. Its architecture is designed to keep AI-generated decisions separate from the execution of sensitive Discord actions, providing a foundation for safer automation and human oversight.
+Quasar is a modular Discord assistant that combines AI-powered reasoning with deterministic server management. It is designed to separate AI-generated decisions from the execution of sensitive Discord actions, providing a foundation for safer automation, policy enforcement, and human oversight.
 
-The project is actively evolving, with ongoing work on analytics, multilingual conflict detection, reliability, and persistent state.
+The project is actively evolving, with ongoing development in analytics, multilingual language detection, conflict detection, provider reliability, and persistent state.
 
-## ✨ Features
+## Features
 
-### 🤖 AI Provider Management
+### 1. AI Provider Management
 
-Quasar integrates with multiple AI providers to support flexible model access and provider failover.
+Quasar integrates with multiple AI providers to support flexible model access.
 
-Providers configured in the project include:
+Configured provider integrations include:
 
 * Google Gemini
-* Anthropic Claude
-* OpenRouter
+* OpenAI
 * Groq
-* OpenAI integration code
+* Anthropic Claude
 
-The project includes provider-management functionality such as:
+The AI subsystem includes provider routing, health tracking, and assistant management modules. Actual provider availability depends on configuration, API access, and implementation status.
 
-* Multi-provider support
-* Automatic provider fallback
-* Provider health tracking
-* Provider-specific timeouts
-* Conversation memory
-* Long-response handling
+### 2. Automated Moderation
 
-**Provider availability and fallback behavior depend on configuration and successful integration.** Not every provider or capability has been independently verified in the current development state.
+Quasar includes a modular moderation system designed to detect inappropriate messages and manage repeated violations.
 
-### 🛡️ Automated Moderation
+Its moderation components include:
 
-Quasar includes rule-based moderation designed to detect spam and escalate repeated violations.
+* Message detection
+* Moderation handling
+* Violation tracking
+* Warning and escalation logic
 
-The documented escalation policy is:
+Moderation behavior should be tested in a controlled Discord server before being relied on in a production community.
 
-| Violation                     | Action                             |
-| ----------------------------- | ---------------------------------- |
-| First violation               | Delete message                     |
-| Second violation              | Delete message and issue a warning |
-| Third or subsequent violation | Apply a timeout                    |
+### 3. Analytics and Reporting
 
-The moderation system also includes violation decay, allowing older violations to stop contributing to a user's escalation level over time.
+Quasar includes an analytics subsystem for processing server activity and producing reports.
 
-Actual enforcement depends on Discord permissions, bot configuration, and the relevant implementation.
+Its modules cover:
 
-### 📊 Analytics Scheduler
+* Message observation
+* Analytics analysis
+* Database management
+* Report generation
+* Scheduled analytics
+* Objective-related workflows
 
-Quasar includes an analytics scheduler that can run analysis through an AI provider.
+### 4. Multilingual Language Detection
 
-A recent development test completed an analytics operation using Groq.
+Quasar includes a language engine and a separate conflict-detection module.
 
-Current development focuses on making analytics more reliable, improving observability, and connecting analysis outputs to the wider assistant architecture.
+The language engine is being developed around English, Filipino, Bisaya, and mixed-language messages, including Taglish and code-switching.
 
-### 🌐 Multilingual Conflict Detection
+The conflict detector analyzes messages for patterns associated with:
 
-Quasar is developing a lightweight conflict-language detection component for English, Filipino, and Bisaya.
+* Possible conflict escalation
+* De-escalation
+* Past conflict
+* Conflict avoidance
 
-The detector currently recognizes patterns associated with four categories:
+These classifications are heuristic signals, not definitive judgments about a person's intentions. Context, sarcasm, slang, and mixed-language expressions can affect accuracy.
 
-* **Possible escalation:** language that may indicate escalating conflict.
-* **De-escalation:** language intended to calm a disagreement or stop a conflict.
-* **Past conflict:** references to conflicts that have already occurred.
-* **Conflict avoidance:** language expressing a desire not to engage in conflict.
+### 5. Controlled Server Actions
 
-Example inputs include:
+Quasar includes modules for planning actions, executing actions, enforcing security policies, and requesting approval.
 
-| Example                     | Detected category   |
-| --------------------------- | ------------------- |
-| `Come fight me.`            | Possible escalation |
-| `Wag kayong mag-away.`      | De-escalation       |
-| `Nag-away sila kahapon.`    | Past conflict       |
-| `Ayoko makipag-away.`       | Conflict avoidance  |
-| `Dili ko gusto makig-away.` | Conflict avoidance  |
+The intended architecture separates action planning from execution so that sensitive operations can be checked against permissions and approval requirements.
 
-These examples demonstrate initial pattern detection, not comprehensive language understanding. The component is still being tested for ambiguous wording, mixed-language messages, contextual meaning, and false positives.
+The effectiveness of these safeguards depends on the actual enforcement logic and must be verified through testing.
 
-A detected signal is not proof of a person's intent or that a real conflict is occurring.
+### 6. Learning Components
 
-## 🏗️ Architecture and Design Principles
+Quasar contains modules for learning candidates and vocabulary learning.
 
-Quasar is designed around modular components that separate responsibilities.
+These components provide a foundation for improving language recognition over time. Any learned data should be validated before it is allowed to influence important moderation or security decisions.
 
-Its core design goals include:
+### 7. Discord Commands
 
-* **Modularity:** Keep AI providers and functional components organized into separate modules.
-* **Controlled execution:** Separate AI-generated decisions from sensitive server actions.
-* **Reliability:** Support provider fallback and timeout handling.
-* **Deterministic moderation:** Use explicit rules for moderation and escalation.
-* **Observability:** Improve logging and visibility into system behavior.
-* **Extensibility:** Make it easier to introduce new analysis components and server-management capabilities.
+The project includes command modules for features such as:
 
-The architecture and individual integrations are evolving as development progresses.
+* AI status
+* Server information and statistics
+* Channel management
+* Server organization
+* Cleanup
+* Analytics
+* Objectives
+* Approval testing
 
-## 🧰 Technology Stack
+The available commands depend on successful loading, configuration, Discord permissions, and application behavior.
+
+## Project Structure
+
+```text
+Quasar/
+├── ai/
+│   ├── action_executor.py
+│   ├── action_planner.py
+│   ├── assistant.py
+│   ├── health.py
+│   ├── learning_candidates.py
+│   ├── manager.py
+│   ├── providers.py
+│   ├── provider_router.py
+│   └── vocabulary_learner.py
+├── analytics/
+│   ├── analyzer.py
+│   ├── database.py
+│   ├── display.py
+│   ├── objectives.py
+│   ├── observer.py
+│   ├── proposals.py
+│   ├── reporter.py
+│   └── scheduler.py
+├── commands/
+├── conflict_detection/
+├── language_engine/
+├── moderation/
+├── security/
+├── utils/
+├── main.py
+├── requirements.txt
+└── README.md
+```
+
+## Technology Stack
 
 * Python
 * discord.py
-* Google Gemini
-* Anthropic Claude
-* OpenRouter
-* Groq
-* OpenAI API integration
-* python-dotenv
-* Discord interactions and slash commands
+* Google Gemini API
+* OpenAI API
+* Groq API
+* Anthropic API
+* SQLite or another database backend, depending on the database implementation
+* Python dotenv for environment configuration
 
-Some dependencies and integrations may be optional depending on the configured features.
+The repository also contains a C++ language-engine component under development. Its build process and integration requirements may differ from those of the Python application.
 
-## 🚀 Getting Started
+## Requirements
 
-### Prerequisites
+* Python compatible with the installed dependencies
+* A Discord bot application and token
+* API credentials for whichever AI providers you intend to use
+* Git for version control
 
-* Python installed on your system
-* A Discord application and bot token
-* Access to any AI providers you intend to use
-* Git
+## Installation
 
 ### 1. Clone the repository
 
@@ -125,103 +154,97 @@ git clone https://github.com/aceyen0969-new/AI-Server-Assistant.git
 cd AI-Server-Assistant
 ```
 
-### 2. Install dependencies
+### 2. Create a virtual environment
 
 ```bash
-pip install -r requirements.txt
+python -m venv .venv
 ```
 
-### 3. Configure environment variables
+Activate it on Windows PowerShell:
 
-Create a `.env` file in the project root and add the credentials required by your configuration.
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+### 3. Install dependencies
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+### 4. Configure environment variables
+
+Create a `.env` file in the project root.
+
+Example:
 
 ```dotenv
 DISCORD_TOKEN=your_discord_bot_token
-
-GEMINI_API_KEY=your_gemini_api_key
-ANTHROPIC_API_KEY=your_anthropic_api_key
-OPENROUTER_API_KEY=your_openrouter_api_key
 GROQ_API_KEY=your_groq_api_key
+GEMINI_API_KEY=your_gemini_api_key
 OPENAI_API_KEY=your_openai_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
 
-Only configure the credentials required by the providers you intend to use. Check the source code for the exact environment-variable names and any additional configuration requirements.
+Use the exact variable names expected by the current provider implementation. Not every provider needs to be configured.
 
-### 4. Start Quasar
+**Security:** Never commit `.env`, API keys, bot tokens, or other secrets to GitHub.
+
+### 5. Configure Discord permissions
+
+Enable the privileged gateway intents required by your bot in the Discord Developer Portal, including Message Content Intent and Server Members Intent when needed.
+
+Grant only the Discord permissions required by the features you intend to use.
+
+### 6. Start Quasar
 
 ```bash
 python main.py
 ```
 
-The application will start according to the configured entry point and available credentials.
+Review the console output for startup errors, provider issues, command synchronization problems, and analytics scheduler status.
 
-### 5. Run the conflict detector tests
+## Development and Testing
 
-The initial conflict detector tests can be run with:
+Run the conflict detector's existing test script:
 
 ```bash
-python -m py_compile main.py conflict_detection/detector.py test_conflict_detector.py
-
 python test_conflict_detector.py
 ```
 
-These commands check Python syntax and execute the current detector test cases. They do not constitute a complete test suite for the entire project.
+Check Python syntax for the main application and conflict detector:
 
-## 🔐 Security
+```bash
+python -m py_compile main.py conflict_detection\detector.py test_conflict_detector.py
+```
 
-Security is a core design consideration for Quasar.
+These checks help identify syntax problems, but passing them does not prove that every feature works correctly. Integration tests and controlled Discord testing are still necessary.
 
-* Never commit `.env` files, API keys, bot tokens, or other secrets.
-* Store credentials in environment variables.
-* Give the Discord bot only the permissions it needs.
-* Validate and constrain sensitive server actions.
-* Keep AI-generated recommendations separate from privileged operations.
-* Review logs to ensure they do not expose credentials or sensitive information.
+## Development Roadmap
 
-Before publishing changes, inspect staged files for accidentally included secrets.
+Potential development priorities include:
 
-## 🗺️ Roadmap
+* Improve English, Filipino, Bisaya, and Taglish detection.
+* Connect language detection and conflict signals through a consistent analysis pipeline.
+* Reduce false positives in conflict classification.
+* Audit AI provider fallback and health tracking.
+* Verify security policies and approval workflows.
+* Improve persistence and lifecycle management for objectives.
+* Expand automated testing and error handling.
+* Document verified behavior and known limitations.
 
-Planned and ongoing development includes:
+## Project Status
 
-* [ ] Improve AI provider reliability and monitoring.
-* [ ] Expand analytics and scheduling capabilities.
-* [ ] Improve multilingual conflict detection.
-* [ ] Handle contextual meaning and mixed-language messages.
-* [ ] Integrate conflict analysis with the broader assistant architecture.
-* [ ] Develop and verify persistent objective tracking.
-* [ ] Improve audit logging and observability.
-* [ ] Expand configurable moderation policies.
-* [ ] Strengthen approval workflows for sensitive actions.
-* [ ] Investigate persistent database storage.
-* [ ] Explore a web dashboard and additional Discord management tools.
-* [ ] Evaluate cloud deployment options.
+**Quasar is a work in progress.**
 
-Roadmap items may change as the project develops.
+The repository contains multiple AI, moderation, analytics, language-processing, and security modules. Their individual features and integration points are being audited and tested as development continues.
 
-## 📌 Project Status
+## Author
 
-Quasar is an actively developed learning and portfolio project.
+Developed by **aceyen0969-new**.
 
-Existing modules cover AI provider integration, Discord moderation, and analytics. Multilingual conflict detection is undergoing initial testing, while broader integration, reliability, and persistence remain areas for continued development.
+GitHub repository: https://github.com/aceyen0969-new/AI-Server-Assistant
 
-Feature availability should be assessed against the current source code and tests rather than the roadmap alone.
-
-## 👨‍💻 Author
-
-Built by **aceyen0969** as a learning and portfolio project focused on:
-
-* Python development
-* AI systems and provider integration
-* Discord bot development
-* Automation and analytics
-* Security-conscious software architecture
-* Multilingual text analysis
-
-## 📄 License
+## License
 
 No license has been specified in this README. Check the repository for an existing license before choosing or adding one.
-
----
-
-*Quasar is a work in progress. Contributions, testing, and architectural improvements are part of its ongoing development.*
