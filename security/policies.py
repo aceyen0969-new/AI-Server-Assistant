@@ -1,175 +1,77 @@
+
 # =========================================================
 # AI SERVER ASSISTANT
 # ACTION POLICIES
 # =========================================================
 #
-# IMPORTANT:
-#
-# The AI can REQUEST an action.
-#
-# The AI does NOT decide whether the action is allowed.
-#
-# This file is controlled by Python and acts as the
-# server's safety policy.
-#
+# The AI may request actions, but Python controls policy.
+# Approval-required actions must never execute automatically.
 # =========================================================
 
-
-# =========================================================
-# ACTION TYPES
-# =========================================================
 
 ACTION_POLICIES = {
-
-    # -----------------------------------------------------
-    # AUTOMATIC ACTIONS
-    # -----------------------------------------------------
-    # These actions can eventually happen automatically
-    # after the appropriate executor is implemented.
-    # -----------------------------------------------------
-
+    # Automatic moderation actions
     "delete_spam": "automatic",
-
     "warn_member": "automatic",
-
     "timeout_member": "automatic",
 
-
-    # -----------------------------------------------------
-    # ACTIONS REQUIRING APPROVAL
-    # -----------------------------------------------------
-    # These actions must NEVER execute immediately.
-    # They require explicit owner/admin confirmation.
-    # -----------------------------------------------------
-
+    # Actions requiring explicit approval
     "move_channel": "approval",
-
     "create_channel": "approval",
-
     "rename_channel": "approval",
-
     "kick_member": "approval",
-
     "ban_member": "approval",
-
     "delete_channel": "approval",
-
     "manage_role": "approval",
-
-    "change_permissions": "approval"
+    "change_permissions": "approval",
 }
 
 
-# =========================================================
-# GET ACTION POLICY
-# =========================================================
-
 def get_action_policy(action):
+    """Return automatic, approval, or unknown."""
+    return ACTION_POLICIES.get(action, "unknown")
 
-    """
-    Return the policy assigned to an action.
-
-    Possible results:
-
-    "automatic"
-    "approval"
-    "unknown"
-    """
-
-    return ACTION_POLICIES.get(
-        action,
-        "unknown"
-    )
-
-
-# =========================================================
-# CHECK IF ACTION IS AUTOMATIC
-# =========================================================
 
 def is_automatic(action):
+    return get_action_policy(action) == "automatic"
 
-    return (
-        get_action_policy(action)
-        == "automatic"
-    )
-
-
-# =========================================================
-# CHECK IF ACTION REQUIRES APPROVAL
-# =========================================================
 
 def requires_approval(action):
+    return get_action_policy(action) == "approval"
 
-    return (
-        get_action_policy(action)
-        == "approval"
-    )
-
-
-# =========================================================
-# CHECK IF ACTION IS KNOWN
-# =========================================================
 
 def is_known_action(action):
-
     return action in ACTION_POLICIES
 
 
-# =========================================================
-# SAFETY DECISION
-# =========================================================
-
 def get_safety_decision(action):
-
     """
-    Return a structured safety decision.
+    Describe whether an action is allowed to execute
+    automatically or is eligible for an approval workflow.
 
-    IMPORTANT:
-    Unknown actions are DENIED.
-
-    We never assume that an unknown action is safe.
+    The executor must still independently validate approval.
     """
-
     policy = get_action_policy(action)
 
-
-    # -----------------------------------------------------
-    # AUTOMATIC
-    # -----------------------------------------------------
-
     if policy == "automatic":
-
         return {
             "action": action,
             "policy": "automatic",
             "allowed": True,
-            "requires_approval": False
+            "requires_approval": False,
         }
 
-
-    # -----------------------------------------------------
-    # APPROVAL REQUIRED
-    # -----------------------------------------------------
-
     if policy == "approval":
-
         return {
             "action": action,
             "policy": "approval",
-            "allowed": False,
-            "requires_approval": True
+            "allowed": True,
+            "requires_approval": True,
         }
-
-
-    # -----------------------------------------------------
-    # UNKNOWN ACTION
-    # -----------------------------------------------------
-    # Fail closed.
-    # -----------------------------------------------------
 
     return {
         "action": action,
         "policy": "unknown",
         "allowed": False,
-        "requires_approval": True
+        "requires_approval": True,
     }

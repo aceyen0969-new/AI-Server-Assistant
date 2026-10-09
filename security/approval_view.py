@@ -14,6 +14,7 @@ from security.actions import (
 )
 
 from ai.action_executor import execute_action
+from security.policies import get_safety_decision
 
 
 class ApprovalView(discord.ui.View):
@@ -26,6 +27,9 @@ class ApprovalView(discord.ui.View):
         timeout: float = 300,
     ):
         super().__init__(timeout=timeout)
+
+        if not isinstance(request_id, str) or not request_id.strip():
+            raise ValueError("request_id must be a non-empty string.")
 
         self.request_id = request_id
         self.allowed_user_id = allowed_user_id
@@ -68,9 +72,7 @@ class ApprovalView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button,
     ):
-        request = get_approval_request(
-            self.request_id
-        )
+        request = get_approval_request(self.request_id)
 
         if request is None:
             await interaction.response.edit_message(
@@ -108,14 +110,23 @@ class ApprovalView(discord.ui.View):
             data=request.data,
         )
 
-        if not can_execute_after_approval(
+        decision_allowed = can_execute_after_approval(
             action_request
+        )
+
+        decision = get_safety_decision(request.action)
+
+        if (
+            not decision_allowed
+            or not decision.get("allowed")
+            or not decision.get("requires_approval")
+            or decision.get("policy") != "approval"
         ):
             await interaction.response.edit_message(
                 content=(
                     "Action blocked.\n\n"
-                    "The security policy does not allow "
-                    "this action to be executed after approval."
+                    "The security policy does not permit "
+                    "this action through the approval workflow."
                 ),
                 embed=None,
                 view=None,
@@ -144,25 +155,29 @@ class ApprovalView(discord.ui.View):
         interaction: discord.Interaction,
         request,
     ):
-        """Execute an approved organization action."""
+        """Execute an action through the secured executor."""
 
         action = {
             "action": request.action,
             **request.data,
         }
 
+        # IMPORTANT: pass the request ID and approved reason.
         success = await execute_action(
             self.guild,
             action,
+            reason=request.reason,
+            approval_request_id=self.request_id,
         )
 
         if not success:
             await interaction.response.edit_message(
                 content=(
-                    "The action was approved, but Discord "
-                    "could not complete it.\n\n"
-                    "Check the bot's permissions and whether "
-                    "the target still exists."
+                    "The request was approved, but the action "
+                    "could not be completed. It may have failed "
+                    "a security check, or Discord may have "
+                    "rejected the operation.\n\n"
+                    "Check the bot's permissions and the target."
                 ),
                 embed=None,
                 view=None,
@@ -189,10 +204,7 @@ class ApprovalView(discord.ui.View):
 
             category_name = (
                 category.name
-                if isinstance(
-                    category,
-                    discord.CategoryChannel,
-                )
+                if isinstance(category, discord.CategoryChannel)
                 else "Unknown Category"
             )
 
@@ -230,7 +242,8 @@ class ApprovalView(discord.ui.View):
                 title="Channel Renamed",
                 description=(
                     f"**Channel:** {channel_name}\n"
-                    f"**New Name:** `{request.data.get('new_name', '')}`\n"
+                    f"**New Name:** "
+                    f"`{request.data.get('new_name', '')}`\n"
                     f"**Reason:** {request.reason}"
                 ),
                 color=discord.Color.green(),
@@ -265,9 +278,7 @@ class ApprovalView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button,
     ):
-        request = get_approval_request(
-            self.request_id
-        )
+        request = get_approval_request(self.request_id)
 
         if request is None:
             await interaction.response.edit_message(
@@ -311,6 +322,5 @@ class ApprovalView(discord.ui.View):
 
         await interaction.response.edit_message(
             content="Action cancelled.",
-            embed=None,
             view=None,
         )

@@ -1,3 +1,4 @@
+
 import discord
 
 from security.approval import (
@@ -42,8 +43,9 @@ def _is_valid_approval(
         return reject("Request is already executing.")
 
     if request.completed:
+        status = getattr(request, "status", "unknown")
         return reject(
-            f"Request has already been used. Status: {request.status}"
+            f"Request has already been used. Status: {status}"
         )
 
     if is_expired(approval_request_id):
@@ -144,12 +146,8 @@ async def _execute_action_impl(
             return False
 
         try:
-            await channel.edit(
-                category=category,
-                reason=reason,
-            )
+            await channel.edit(category=category, reason=reason)
             return True
-
         except discord.HTTPException as error:
             print(f"ACTION EXECUTOR: Move failed: {error!r}")
             return False
@@ -194,12 +192,8 @@ async def _execute_action_impl(
             return False
 
         try:
-            await channel.edit(
-                name=new_name,
-                reason=reason,
-            )
+            await channel.edit(name=new_name, reason=reason)
             return True
-
         except discord.HTTPException as error:
             print(f"ACTION EXECUTOR: Rename failed: {error!r}")
             return False
@@ -233,18 +227,11 @@ async def _execute_action_impl(
 
         try:
             if channel_type == "text":
-                await guild.create_text_channel(
-                    name=name,
-                    reason=reason,
-                )
+                await guild.create_text_channel(name=name, reason=reason)
             else:
-                await guild.create_voice_channel(
-                    name=name,
-                    reason=reason,
-                )
+                await guild.create_voice_channel(name=name, reason=reason)
 
             return True
-
         except discord.HTTPException as error:
             print(f"ACTION EXECUTOR: Create failed: {error!r}")
             return False
@@ -270,7 +257,6 @@ async def execute_action(
         return False
 
     # Claim the request before the first Discord API call.
-    # This synchronous state change prevents a second execution.
     claimed = claim_approved_request(
         request_id=approval_request_id,
         action=action,
@@ -292,11 +278,9 @@ async def execute_action(
             action=action,
             reason=reason,
         )
-
     except Exception as error:
         print(f"ACTION EXECUTOR: Unexpected failure: {error!r}")
         success = False
-
     finally:
         recorded = complete_approval_request(
             request_id=approval_request_id,
