@@ -6,9 +6,71 @@ import discord
 from analytics.analyzer import analyze_server
 from analytics.database import DATABASE_PATH, get_message_count
 from analytics.proposals import process_analytics_proposals
+from onboarding import (
+    get_server_config,
+    save_server_config,
+)
 
 
 ANALYTICS_INTERVAL = 86400
+ANALYTICS_CHANNEL_ALIASES = ("quasar-reports", "analytics")
+
+
+def resolve_analytics_channel(guild):
+    config = get_server_config(guild.id) or {}
+    saved_channel_id = config.get("analytics_channel_id")
+
+    if saved_channel_id:
+        saved_channel = guild.get_channel(saved_channel_id)
+
+        if isinstance(saved_channel, discord.TextChannel):
+            if (
+                saved_channel.name == "analytics"
+                and saved_channel.name == "analytics"
+            ):
+                preferred_channel = discord.utils.get(
+                    guild.text_channels,
+                    name="quasar-reports",
+                )
+
+                if preferred_channel is not None:
+                    print(
+                        "ANALYTICS SCHEDULER: Migrating saved analytics "
+                        f"channel from #{saved_channel.name} to "
+                        f"#{preferred_channel.name} in {guild.name}.",
+                        flush=True,
+                    )
+                    saved_channel = preferred_channel
+
+                    save_server_config(
+                        guild.id,
+                        analytics_channel_id=saved_channel.id,
+                    )
+
+            return saved_channel
+
+    for channel_name in ANALYTICS_CHANNEL_ALIASES:
+        channel = discord.utils.get(
+            guild.text_channels,
+            name=channel_name,
+        )
+
+        if channel is not None:
+            save_server_config(
+                guild.id,
+                analytics_channel_id=channel.id,
+            )
+
+            print(
+                "ANALYTICS SCHEDULER: Selected "
+                f"#{channel.name} as the analytics channel "
+                f"for {guild.name}.",
+                flush=True,
+            )
+
+            return channel
+
+    return None
 
 
 def format_structure_findings(structure_result):
@@ -154,14 +216,12 @@ async def run_analytics_cycle(guild: discord.Guild):
             "Deterministic server structure findings are shown below."
         )
 
-    analytics_channel = discord.utils.get(
-        guild.text_channels,
-        name="analytics",
-    )
+    analytics_channel = resolve_analytics_channel(guild)
 
     if analytics_channel is None:
         print(
-            f"ANALYTICS SCHEDULER: No #analytics channel found in {guild.name}.",
+            "ANALYTICS SCHEDULER: No analytics destination found "
+            f"in {guild.name}. Create #quasar-reports or #analytics.",
             flush=True,
         )
         return
@@ -280,7 +340,9 @@ async def run_analytics_cycle(guild: discord.Guild):
         await analytics_channel.send(embed=embed)
 
         print(
-            f"ANALYTICS SCHEDULER: Report sent to #{analytics_channel.name}.",
+            "ANALYTICS SCHEDULER: Report sent to "
+            f"#{analytics_channel.name} "
+            f"(channel_id={analytics_channel.id}).",
             flush=True,
         )
 
