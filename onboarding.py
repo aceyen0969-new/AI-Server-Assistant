@@ -1,3 +1,4 @@
+
 import asyncio
 import sqlite3
 
@@ -8,6 +9,7 @@ from analytics.database import DATABASE_PATH
 
 ASSISTANT_CHANNEL_NAME = "ai-assistant"
 ANALYTICS_CHANNEL_NAME = "analytics"
+ANALYTICS_CHANNEL_ALIASES = ("quasar-reports", "analytics")
 
 _setup_locks = {}
 
@@ -31,7 +33,6 @@ def initialize_onboarding_database():
 def get_server_config(guild_id):
     with sqlite3.connect(DATABASE_PATH) as connection:
         connection.row_factory = sqlite3.Row
-
         row = connection.execute(
             """
             SELECT *
@@ -65,7 +66,7 @@ def save_server_config(guild_id, **values):
 
     with sqlite3.connect(DATABASE_PATH) as connection:
         connection.execute(
-            f"""
+            """
             INSERT INTO server_channel_config (guild_id)
             VALUES (?)
             ON CONFLICT(guild_id) DO NOTHING
@@ -102,16 +103,28 @@ def find_channel_by_name(guild, name):
     )
 
 
-async def get_or_create_channel(guild, channel_id, channel_name):
+async def get_or_create_channel(
+    guild,
+    channel_id,
+    channel_name,
+    alternate_names=(),
+):
     channel = find_channel_by_id(guild, channel_id)
 
     if channel is not None:
         return channel, False
 
-    channel = find_channel_by_name(guild, channel_name)
+    for name in dict.fromkeys((channel_name, *alternate_names)):
+        channel = find_channel_by_name(guild, name)
 
-    if channel is not None:
-        return channel, False
+        if channel is not None:
+            print(
+                "ONBOARDING: Reusing existing "
+                f"#{channel.name} in {guild.name} "
+                f"(guild_id={guild.id}, channel_id={channel.id})",
+                flush=True,
+            )
+            return channel, False
 
     bot_member = guild.me
 
@@ -241,6 +254,7 @@ async def ensure_server_setup(guild):
                 guild,
                 config["analytics_channel_id"],
                 ANALYTICS_CHANNEL_NAME,
+                ANALYTICS_CHANNEL_ALIASES,
             )
         )
 
