@@ -36,27 +36,19 @@ from conflict_detection.detector import (
 
 load_dotenv()
 
-
-DISCORD_TOKEN = os.getenv(
-    "DISCORD_TOKEN"
-)
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
 if not DISCORD_TOKEN:
-    raise RuntimeError(
-        "DISCORD_TOKEN is missing from .env"
-    )
-
+    raise RuntimeError("DISCORD_TOKEN is missing from .env")
 
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
-
 bot = commands.Bot(
     command_prefix="!",
-    intents=intents
+    intents=intents,
 )
-
 
 scheduler_task = None
 
@@ -77,51 +69,31 @@ async def load_features():
 
 @bot.event
 async def on_ready():
-
     global scheduler_task
 
     print("----------------------------------------")
-    print(
-        f"Logged in as {bot.user}"
-    )
-    print(
-        f"Connected to {len(bot.guilds)} server(s)"
-    )
+    print(f"Logged in as {bot.user}")
+    print(f"Connected to {len(bot.guilds)} server(s)")
     print("----------------------------------------")
 
     try:
-
         print(
             "COMMAND TREE:",
             [
                 command.name
                 for command in bot.tree.get_commands()
-            ]
+            ],
         )
 
         synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} slash command(s)")
 
-        print(
-            f"Synced {len(synced)} slash command(s)"
-        )
+    except Exception as error:
+        print("COMMAND SYNC ERROR:")
+        print(repr(error))
 
-    except Exception as e:
-
-        print(
-            "Command sync error:"
-        )
-
-        print(e)
-
-    if (
-        scheduler_task is None
-        or scheduler_task.done()
-    ):
-
-        print(
-            "ANALYTICS SCHEDULER: Starting..."
-        )
-
+    if scheduler_task is None or scheduler_task.done():
+        print("ANALYTICS SCHEDULER: Starting...")
         scheduler_task = asyncio.create_task(
             analytics_scheduler(bot)
         )
@@ -129,111 +101,88 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
+    if message.guild is None:
+        await bot.process_commands(message)
+        return
 
-    await moderation_manager.handle_message(
-        message
-    )
+    if message.author.bot:
+        await bot.process_commands(message)
+        return
 
-    if (
-        not message.author.bot
-        and message.content.strip()
-    ):
+    try:
+        await observer.handle_message(message)
+        print(
+            "ANALYTICS MESSAGE RECORDED: "
+            f"guild={message.guild.id}, "
+            f"channel={message.channel.id}, "
+            f"user={message.author.id}",
+            flush=True,
+        )
+    except Exception as error:
+        print("ANALYTICS OBSERVER ERROR:")
+        print(repr(error))
 
+    try:
+        await moderation_manager.handle_message(message)
+    except Exception as error:
+        print("MODERATION HANDLER ERROR:")
+        print(repr(error))
+
+    if message.content.strip():
         try:
+            language_result = detect_message(message.content)
 
-            language_result = detect_message(
-                message.content
-            )
+            print("LANGUAGE DETECTOR:", language_result)
 
-            print(
-                "LANGUAGE DETECTOR:",
-                language_result
-            )
-
-            unknown_words = (
-                language_result.get(
-                    "unknown_words",
-                    []
-                )
+            unknown_words = language_result.get(
+                "unknown_words",
+                [],
             )
 
             if unknown_words:
-
-                learning_results = (
-                    learn_unknown_words(
-                        language_result
-                    )
+                learning_results = learn_unknown_words(
+                    language_result
                 )
 
-                print(
-                    "LANGUAGE LEARNING:",
-                    learning_results
-                )
+                print("LANGUAGE LEARNING:", learning_results)
 
             conflict_result = detect_conflict_signals(
                 message.content
             )
 
-            print(
-                "CONFLICT SIGNALS:",
-                conflict_result
-            )
+            print("CONFLICT SIGNALS:", conflict_result)
 
-        except Exception as e:
+        except Exception as error:
+            print("MESSAGE ANALYSIS ERROR:")
+            print(repr(error))
 
-            print(
-                "MESSAGE ANALYSIS ERROR:"
-            )
-
-            print(
-                repr(e)
-            )
-
-    await observer.handle_message(
-        message
-    )
-
-    await assistant.handle_message(
-        message
-    )
-
-    await bot.process_commands(
-        message
-    )
+    try:
+        await assistant.handle_message(message)
+    except Exception as error:
+        print("ASSISTANT HANDLER ERROR:")
+        print(repr(error))
+    finally:
+        await bot.process_commands(message)
 
 
 async def main():
-
     initialize_database()
 
     async with bot:
-
         await load_features()
 
         try:
-
-            await bot.start(
-                DISCORD_TOKEN
-            )
-
+            await bot.start(DISCORD_TOKEN)
         finally:
-
             if scheduler_task is not None:
-
                 scheduler_task.cancel()
 
                 try:
-
                     await scheduler_task
-
                 except asyncio.CancelledError:
-
                     pass
 
 
-print(
-    "Starting AI Server Assistant..."
-)
-
+print("Starting AI Server Assistant...")
 
 asyncio.run(main())
