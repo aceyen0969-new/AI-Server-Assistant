@@ -1,8 +1,10 @@
+
 import asyncio
 
 import discord
 
 from analytics.analyzer import analyze_server
+from analytics.database import DATABASE_PATH, get_message_count
 from analytics.proposals import process_analytics_proposals
 
 
@@ -67,6 +69,29 @@ async def run_analytics_cycle(guild: discord.Guild):
     )
 
     print(
+        f"ANALYTICS DATABASE DEBUG: path={DATABASE_PATH}",
+        flush=True,
+    )
+
+    try:
+        database_total = get_message_count(guild.id)
+        database_seven_days = get_message_count(guild.id, 7)
+
+        print(
+            "ANALYTICS DATABASE DEBUG: "
+            f"guild_id={guild.id}, "
+            f"total_messages={database_total}, "
+            f"last_7_days={database_seven_days}",
+            flush=True,
+        )
+    except Exception as exc:
+        print(
+            "ANALYTICS DATABASE DEBUG: Direct database count failed.",
+            flush=True,
+        )
+        print(repr(exc), flush=True)
+
+    print(
         "ANALYTICS SCHEDULER: Running analytics...",
         flush=True,
     )
@@ -90,6 +115,14 @@ async def run_analytics_cycle(guild: discord.Guild):
 
     if not isinstance(report, dict):
         report = {}
+
+    print(
+        "ANALYTICS REPORT DEBUG: "
+        f"guild_id={guild.id}, "
+        f"report_total_messages={report.get('total_messages')!r}, "
+        f"report_unique_members={report.get('unique_members')!r}",
+        flush=True,
+    )
 
     structure_result = report.get(
         "deterministic_structure",
