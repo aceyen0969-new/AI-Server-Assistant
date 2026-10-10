@@ -1,26 +1,42 @@
 from collections import defaultdict
 
 
-def _get_channels(guild):
-    """Return the guild's available channels safely."""
-    channels = getattr(guild, "channels", [])
-
-    if not isinstance(channels, (list, tuple)):
+def _as_list(value):
+    if value is None or isinstance(value, (str, bytes)):
         return []
 
-    return list(channels)
+    try:
+        return list(value)
+    except (TypeError, ValueError):
+        return []
+
+
+def _get_channels(guild):
+    if guild is None:
+        return []
+
+    return _as_list(getattr(guild, "channels", None))
 
 
 def _is_category(channel):
-    """Identify category channels without relying on channel names."""
-    return hasattr(channel, "channels") and not isinstance(
-        getattr(channel, "channels", None),
-        (str, bytes),
+    if channel is None:
+        return False
+
+    channel_type = type(channel).__name__.lower()
+
+    if "category" in channel_type:
+        return True
+
+    return (
+        hasattr(channel, "channels")
+        and not isinstance(
+            getattr(channel, "channels", None),
+            (str, bytes),
+        )
     )
 
 
 def _channel_type(channel):
-    """Return a readable channel type."""
     if _is_category(channel):
         return "category"
 
@@ -41,9 +57,6 @@ def _channel_type(channel):
     if "thread" in type_name:
         return "thread"
 
-    if "category" in type_name:
-        return "category"
-
     channel_type = getattr(channel, "type", None)
 
     if channel_type is not None:
@@ -53,7 +66,6 @@ def _channel_type(channel):
 
 
 def _get_category_id(channel):
-    """Return the parent category ID when available."""
     category_id = getattr(channel, "category_id", None)
 
     if category_id is not None:
@@ -68,12 +80,6 @@ def _get_category_id(channel):
 
 
 def build_server_snapshot(guild):
-    """
-    Build a structured snapshot of a Discord server's layout.
-
-    This function only reads cached guild and channel information.
-    It does not modify the server or read message content.
-    """
     if guild is None:
         raise ValueError("guild is required.")
 
@@ -99,10 +105,9 @@ def build_server_snapshot(guild):
     category_details = []
 
     for category in categories:
-        child_channels = getattr(category, "channels", [])
-
-        if not isinstance(child_channels, (list, tuple)):
-            child_channels = []
+        child_channels = _as_list(
+            getattr(category, "channels", None)
+        )
 
         category_details.append({
             "id": getattr(category, "id", None),
@@ -130,22 +135,33 @@ def build_server_snapshot(guild):
             ),
         })
 
-    return {
+    snapshot = {
         "guild_id": getattr(guild, "id", None),
-        "guild_name": str(getattr(guild, "name", "Unknown Server")),
+        "guild_name": str(
+            getattr(guild, "name", "Unknown Server")
+        ),
         "channel_count": len(regular_channels),
         "category_count": len(categories),
         "channels": channel_details,
         "categories": category_details,
     }
 
+    print(
+        "ANALYTICS SNAPSHOT DEBUG: "
+        f"guild={snapshot['guild_name']!r}, "
+        f"guild_id={snapshot['guild_id']}, "
+        f"total_cached_channels={len(channels)}, "
+        f"regular_channels={len(regular_channels)}, "
+        f"categories={len(categories)}, "
+        f"snapshot_channel_entries={len(channel_details)}, "
+        f"snapshot_category_entries={len(category_details)}",
+        flush=True,
+    )
+
+    return snapshot
+
 
 def detect_structure_issues(snapshot):
-    """
-    Detect possible server-organization problems.
-
-    Findings are suggestions, not instructions to modify the server.
-    """
     if not isinstance(snapshot, dict):
         raise ValueError("snapshot must be a dictionary.")
 
@@ -160,19 +176,12 @@ def detect_structure_issues(snapshot):
 
     findings = []
 
-    # --------------------------------------------
-    # Empty categories
-    # --------------------------------------------
-
     for category in categories:
         if not isinstance(category, dict):
             continue
 
-        channel_count = category.get("channel_count")
-
-        if channel_count == 0:
+        if category.get("channel_count") == 0:
             name = str(category.get("name", "Unknown"))
-            category_id = category.get("id")
 
             findings.append({
                 "code": "empty_category",
@@ -182,7 +191,7 @@ def detect_structure_issues(snapshot):
                     f"The category '{name}' currently has no channels."
                 ),
                 "evidence": {
-                    "category_id": category_id,
+                    "category_id": category.get("id"),
                     "channel_count": 0,
                 },
                 "recommendation": (
@@ -190,10 +199,6 @@ def detect_structure_issues(snapshot):
                     "It may be intentionally reserved for future use."
                 ),
             })
-
-    # --------------------------------------------
-    # Uncategorized channels
-    # --------------------------------------------
 
     for channel in channels:
         if not isinstance(channel, dict):
@@ -218,14 +223,10 @@ def detect_structure_issues(snapshot):
                 },
                 "recommendation": (
                     "Review whether this channel would benefit from "
-                    "being placed in an appropriate category. "
-                    "Some channels are intentionally left uncategorized."
+                    "an appropriate category. Some channels are "
+                    "intentionally left uncategorized."
                 ),
             })
-
-    # --------------------------------------------
-    # Possible duplicate channel names
-    # --------------------------------------------
 
     channels_by_name = defaultdict(list)
 
@@ -238,15 +239,12 @@ def detect_structure_issues(snapshot):
         if not isinstance(name, str) or not name.strip():
             continue
 
-        normalized_name = name.strip().casefold()
-
-        channels_by_name[normalized_name].append(channel)
+        channels_by_name[name.strip().casefold()].append(channel)
 
     for normalized_name, matching_channels in channels_by_name.items():
         if len(matching_channels) < 2:
             continue
 
-        # Avoid reporting duplicates across different channel types.
         channels_by_type = defaultdict(list)
 
         for channel in matching_channels:
@@ -267,7 +265,10 @@ def detect_structure_issues(snapshot):
             ]
 
             display_name = str(
-                same_type_channels[0].get("name", normalized_name)
+                same_type_channels[0].get(
+                    "name",
+                    normalized_name,
+                )
             )
 
             findings.append({
@@ -285,8 +286,8 @@ def detect_structure_issues(snapshot):
                     "channels": names,
                 },
                 "recommendation": (
-                    "Review whether these channels have distinct purposes. "
-                    "Keep the names if the duplication is intentional."
+                    "Review whether these channels have distinct "
+                    "purposes. Keep the names if duplication is intentional."
                 ),
             })
 
@@ -295,19 +296,6 @@ def detect_structure_issues(snapshot):
 
 def analyze_server_structure(guild):
     snapshot = build_server_snapshot(guild)
-
-    print(
-        "ANALYTICS SNAPSHOT DEBUG: "
-        f"guild={snapshot['guild_name']!r}, "
-        f"guild_id={snapshot['guild_id']}, "
-        f"total_cached_channels={len(_get_channels(guild))}, "
-        f"regular_channels={snapshot['channel_count']}, "
-        f"categories={snapshot['category_count']}, "
-        f"snapshot_channel_entries={len(snapshot['channels'])}, "
-        f"snapshot_category_entries={len(snapshot['categories'])}",
-        flush=True,
-    )
-
     findings = detect_structure_issues(snapshot)
 
     severity_order = {
