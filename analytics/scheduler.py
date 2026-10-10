@@ -1,4 +1,3 @@
-
 import asyncio
 
 import discord
@@ -11,8 +10,6 @@ ANALYTICS_INTERVAL = 86400
 
 
 def format_structure_findings(structure_result):
-    """Format deterministic findings for a Discord embed."""
-
     if not isinstance(structure_result, dict):
         return "Deterministic findings are unavailable."
 
@@ -59,7 +56,15 @@ def format_structure_findings(structure_result):
 
 
 async def run_analytics_cycle(guild: discord.Guild):
-    """Run one scheduled analytics cycle."""
+    print(
+        f"ANALYTICS DEBUG: Guild={guild.name!r}, "
+        f"id={guild.id}, "
+        f"channels={len(guild.channels)}, "
+        f"text_channels={len(guild.text_channels)}, "
+        f"categories={len(guild.categories)}, "
+        f"members={guild.member_count}",
+        flush=True,
+    )
 
     print(
         "ANALYTICS SCHEDULER: Running analytics...",
@@ -288,8 +293,6 @@ async def run_analytics_cycle(guild: discord.Guild):
 
 
 async def analytics_scheduler(bot):
-    """Run scheduled analytics for all connected servers."""
-
     while True:
         for guild in bot.guilds:
             try:
