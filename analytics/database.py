@@ -1,21 +1,21 @@
+
+import os
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 
-DATABASE_PATH = (
-    Path(__file__).resolve().parent
-    / "analytics.db"
+DEFAULT_DATABASE_DIR = Path(__file__).resolve().parent
+DATABASE_DIR = Path(
+    os.getenv("QUASAR_DATA_DIR", str(DEFAULT_DATABASE_DIR))
 )
+DATABASE_DIR.mkdir(parents=True, exist_ok=True)
+DATABASE_PATH = DATABASE_DIR / "analytics.db"
 
 
 def get_connection():
-    connection = sqlite3.connect(
-        DATABASE_PATH
-    )
-
+    connection = sqlite3.connect(DATABASE_PATH)
     connection.row_factory = sqlite3.Row
-
     return connection
 
 
@@ -23,7 +23,6 @@ def initialize_database():
     connection = get_connection()
 
     try:
-
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS message_activity (
@@ -97,21 +96,12 @@ def initialize_database():
         connection.commit()
 
     finally:
-
         connection.close()
 
 
-def get_start_time(
-    days: int,
-):
-    now = datetime.now(
-        timezone.utc
-    )
-
-    start = now - timedelta(
-        days=days
-    )
-
+def get_start_time(days: int):
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=days)
     return start.isoformat()
 
 
@@ -124,7 +114,6 @@ def record_message(
     connection = get_connection()
 
     try:
-
         connection.execute(
             """
             INSERT INTO message_activity (
@@ -135,18 +124,11 @@ def record_message(
             )
             VALUES (?, ?, ?, ?)
             """,
-            (
-                guild_id,
-                channel_id,
-                user_id,
-                created_at,
-            ),
+            (guild_id, channel_id, user_id, created_at),
         )
-
         connection.commit()
 
     finally:
-
         connection.close()
 
 
@@ -161,7 +143,6 @@ def record_analysis_report(
     connection = get_connection()
 
     try:
-
         connection.execute(
             """
             INSERT INTO analysis_reports (
@@ -177,9 +158,7 @@ def record_analysis_report(
             """,
             (
                 guild_id,
-                datetime.now(
-                    timezone.utc
-                ).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
                 period_days,
                 total_messages,
                 unique_members,
@@ -187,104 +166,63 @@ def record_analysis_report(
                 analysis_json,
             ),
         )
-
         connection.commit()
 
     finally:
-
         connection.close()
 
 
-def get_analysis_reports(
-    guild_id: int,
-    limit: int = 10,
-):
+def get_analysis_reports(guild_id: int, limit: int = 10):
     connection = get_connection()
 
     try:
-
         rows = connection.execute(
             """
             SELECT
-                id,
-                guild_id,
-                created_at,
-                period_days,
-                total_messages,
-                unique_members,
-                provider,
-                analysis_json
+                id, guild_id, created_at, period_days,
+                total_messages, unique_members, provider, analysis_json
             FROM analysis_reports
             WHERE guild_id = ?
             ORDER BY created_at DESC
             LIMIT ?
             """,
-            (
-                guild_id,
-                limit,
-            ),
+            (guild_id, limit),
         ).fetchall()
 
-        return [
-            dict(row)
-            for row in rows
-        ]
+        return [dict(row) for row in rows]
 
     finally:
-
         connection.close()
 
 
-def get_previous_analysis_report(
-    guild_id: int,
-):
+def get_previous_analysis_report(guild_id: int):
     connection = get_connection()
 
     try:
-
         row = connection.execute(
             """
             SELECT
-                id,
-                guild_id,
-                created_at,
-                period_days,
-                total_messages,
-                unique_members,
-                provider,
-                analysis_json
+                id, guild_id, created_at, period_days,
+                total_messages, unique_members, provider, analysis_json
             FROM analysis_reports
             WHERE guild_id = ?
             ORDER BY created_at DESC
             LIMIT 1
             """,
-            (
-                guild_id,
-            ),
+            (guild_id,),
         ).fetchone()
 
-        if row is None:
-            return None
-
-        return dict(
-            row
-        )
+        return dict(row) if row is not None else None
 
     finally:
-
         connection.close()
 
 
-def get_message_count(
-    guild_id: int,
-    days: int | None = None,
-):
+def get_message_count(guild_id: int, days: int | None = None):
     connection = get_connection()
 
     try:
-
         if days is None:
-
             result = connection.execute(
                 """
                 SELECT COUNT(*) AS count
@@ -293,13 +231,8 @@ def get_message_count(
                 """,
                 (guild_id,),
             ).fetchone()
-
         else:
-
-            start_time = get_start_time(
-                days
-            )
-
+            start_time = get_start_time(days)
             result = connection.execute(
                 """
                 SELECT COUNT(*) AS count
@@ -307,29 +240,20 @@ def get_message_count(
                 WHERE guild_id = ?
                 AND created_at >= ?
                 """,
-                (
-                    guild_id,
-                    start_time,
-                ),
+                (guild_id, start_time),
             ).fetchone()
 
         return result["count"]
 
     finally:
-
         connection.close()
 
 
-def get_unique_member_count(
-    guild_id: int,
-    days: int | None = None,
-):
+def get_unique_member_count(guild_id: int, days: int | None = None):
     connection = get_connection()
 
     try:
-
         if days is None:
-
             result = connection.execute(
                 """
                 SELECT COUNT(DISTINCT user_id) AS count
@@ -338,13 +262,8 @@ def get_unique_member_count(
                 """,
                 (guild_id,),
             ).fetchone()
-
         else:
-
-            start_time = get_start_time(
-                days
-            )
-
+            start_time = get_start_time(days)
             result = connection.execute(
                 """
                 SELECT COUNT(DISTINCT user_id) AS count
@@ -352,34 +271,23 @@ def get_unique_member_count(
                 WHERE guild_id = ?
                 AND created_at >= ?
                 """,
-                (
-                    guild_id,
-                    start_time,
-                ),
+                (guild_id, start_time),
             ).fetchone()
 
         return result["count"]
 
     finally:
-
         connection.close()
 
 
-def get_channel_activity(
-    guild_id: int,
-    days: int | None = None,
-):
+def get_channel_activity(guild_id: int, days: int | None = None):
     connection = get_connection()
 
     try:
-
         if days is None:
-
             rows = connection.execute(
                 """
-                SELECT
-                    channel_id,
-                    COUNT(*) AS message_count
+                SELECT channel_id, COUNT(*) AS message_count
                 FROM message_activity
                 WHERE guild_id = ?
                 GROUP BY channel_id
@@ -387,28 +295,18 @@ def get_channel_activity(
                 """,
                 (guild_id,),
             ).fetchall()
-
         else:
-
-            start_time = get_start_time(
-                days
-            )
-
+            start_time = get_start_time(days)
             rows = connection.execute(
                 """
-                SELECT
-                    channel_id,
-                    COUNT(*) AS message_count
+                SELECT channel_id, COUNT(*) AS message_count
                 FROM message_activity
                 WHERE guild_id = ?
                 AND created_at >= ?
                 GROUP BY channel_id
                 ORDER BY message_count DESC
                 """,
-                (
-                    guild_id,
-                    start_time,
-                ),
+                (guild_id, start_time),
             ).fetchall()
 
         return [
@@ -420,25 +318,17 @@ def get_channel_activity(
         ]
 
     finally:
-
         connection.close()
 
 
-def get_member_activity(
-    guild_id: int,
-    days: int | None = None,
-):
+def get_member_activity(guild_id: int, days: int | None = None):
     connection = get_connection()
 
     try:
-
         if days is None:
-
             rows = connection.execute(
                 """
-                SELECT
-                    user_id,
-                    COUNT(*) AS message_count
+                SELECT user_id, COUNT(*) AS message_count
                 FROM message_activity
                 WHERE guild_id = ?
                 GROUP BY user_id
@@ -446,28 +336,18 @@ def get_member_activity(
                 """,
                 (guild_id,),
             ).fetchall()
-
         else:
-
-            start_time = get_start_time(
-                days
-            )
-
+            start_time = get_start_time(days)
             rows = connection.execute(
                 """
-                SELECT
-                    user_id,
-                    COUNT(*) AS message_count
+                SELECT user_id, COUNT(*) AS message_count
                 FROM message_activity
                 WHERE guild_id = ?
                 AND created_at >= ?
                 GROUP BY user_id
                 ORDER BY message_count DESC
                 """,
-                (
-                    guild_id,
-                    start_time,
-                ),
+                (guild_id, start_time),
             ).fetchall()
 
         return [
@@ -479,20 +359,14 @@ def get_member_activity(
         ]
 
     finally:
-
         connection.close()
 
 
-def get_hourly_activity(
-    guild_id: int,
-    days: int | None = None,
-):
+def get_hourly_activity(guild_id: int, days: int | None = None):
     connection = get_connection()
 
     try:
-
         if days is None:
-
             rows = connection.execute(
                 """
                 SELECT
@@ -505,13 +379,8 @@ def get_hourly_activity(
                 """,
                 (guild_id,),
             ).fetchall()
-
         else:
-
-            start_time = get_start_time(
-                days
-            )
-
+            start_time = get_start_time(days)
             rows = connection.execute(
                 """
                 SELECT
@@ -523,10 +392,7 @@ def get_hourly_activity(
                 GROUP BY hour
                 ORDER BY hour
                 """,
-                (
-                    guild_id,
-                    start_time,
-                ),
+                (guild_id, start_time),
             ).fetchall()
 
         return [
@@ -538,22 +404,14 @@ def get_hourly_activity(
         ]
 
     finally:
-
         connection.close()
 
 
-def get_daily_activity(
-    guild_id: int,
-    days: int = 7,
-):
+def get_daily_activity(guild_id: int, days: int = 7):
     connection = get_connection()
 
     try:
-
-        start_time = get_start_time(
-            days
-        )
-
+        start_time = get_start_time(days)
         rows = connection.execute(
             """
             SELECT
@@ -565,10 +423,7 @@ def get_daily_activity(
             GROUP BY date
             ORDER BY date
             """,
-            (
-                guild_id,
-                start_time,
-            ),
+            (guild_id, start_time),
         ).fetchall()
 
         activity_by_date = {
@@ -576,35 +431,22 @@ def get_daily_activity(
             for row in rows
         }
 
-        now = datetime.now(
-            timezone.utc
-        )
-
+        now = datetime.now(timezone.utc)
         start_date = (
-            now - timedelta(
-                days=days - 1
-            )
+            now - timedelta(days=days - 1)
         ).date()
 
         results = []
 
         for offset in range(days):
-
-            current_date = (
-                start_date
-                + timedelta(
-                    days=offset
-                )
-            )
-
+            current_date = start_date + timedelta(days=offset)
             date_string = current_date.isoformat()
 
             results.append(
                 {
                     "date": date_string,
                     "message_count": activity_by_date.get(
-                        date_string,
-                        0,
+                        date_string, 0
                     ),
                 }
             )
@@ -612,48 +454,31 @@ def get_daily_activity(
         return results
 
     finally:
-
         connection.close()
 
 
-def save_memory(
-    guild_id: int,
-    memory_type: str,
-    content: str,
-):
+def save_memory(guild_id: int, memory_type: str, content: str):
     connection = get_connection()
 
     try:
-
-        now = datetime.now(
-            timezone.utc
-        ).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         existing = connection.execute(
             """
-            SELECT
-                id,
-                occurrences
+            SELECT id, occurrences
             FROM server_memory
             WHERE guild_id = ?
             AND memory_type = ?
             AND content = ?
             """,
-            (
-                guild_id,
-                memory_type,
-                content,
-            ),
+            (guild_id, memory_type, content),
         ).fetchone()
 
         if existing is not None:
-
             connection.execute(
                 """
                 UPDATE server_memory
-                SET
-                    last_seen_at = ?,
-                    occurrences = ?
+                SET last_seen_at = ?, occurrences = ?
                 WHERE id = ?
                 """,
                 (
@@ -662,18 +487,12 @@ def save_memory(
                     existing["id"],
                 ),
             )
-
         else:
-
             connection.execute(
                 """
                 INSERT INTO server_memory (
-                    guild_id,
-                    memory_type,
-                    content,
-                    created_at,
-                    last_seen_at,
-                    occurrences
+                    guild_id, memory_type, content,
+                    created_at, last_seen_at, occurrences
                 )
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
@@ -690,7 +509,6 @@ def save_memory(
         connection.commit()
 
     finally:
-
         connection.close()
 
 
@@ -702,62 +520,37 @@ def get_memories(
     connection = get_connection()
 
     try:
-
         if memory_type is None:
-
             rows = connection.execute(
                 """
                 SELECT
-                    id,
-                    guild_id,
-                    memory_type,
-                    content,
-                    created_at,
-                    last_seen_at,
-                    occurrences
+                    id, guild_id, memory_type, content,
+                    created_at, last_seen_at, occurrences
                 FROM server_memory
                 WHERE guild_id = ?
                 ORDER BY last_seen_at DESC
                 LIMIT ?
                 """,
-                (
-                    guild_id,
-                    limit,
-                ),
+                (guild_id, limit),
             ).fetchall()
-
         else:
-
             rows = connection.execute(
                 """
                 SELECT
-                    id,
-                    guild_id,
-                    memory_type,
-                    content,
-                    created_at,
-                    last_seen_at,
-                    occurrences
+                    id, guild_id, memory_type, content,
+                    created_at, last_seen_at, occurrences
                 FROM server_memory
                 WHERE guild_id = ?
                 AND memory_type = ?
                 ORDER BY last_seen_at DESC
                 LIMIT ?
                 """,
-                (
-                    guild_id,
-                    memory_type,
-                    limit,
-                ),
+                (guild_id, memory_type, limit),
             ).fetchall()
 
-        return [
-            dict(row)
-            for row in rows
-        ]
+        return [dict(row) for row in rows]
 
     finally:
-
         connection.close()
 
 
@@ -770,21 +563,13 @@ def create_objective(
     connection = get_connection()
 
     try:
-
-        now = datetime.now(
-            timezone.utc
-        ).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         cursor = connection.execute(
             """
             INSERT INTO server_objectives (
-                guild_id,
-                objective,
-                description,
-                priority,
-                status,
-                created_at,
-                updated_at
+                guild_id, objective, description,
+                priority, status, created_at, updated_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
@@ -800,11 +585,9 @@ def create_objective(
         )
 
         connection.commit()
-
         return cursor.lastrowid
 
     finally:
-
         connection.close()
 
 
@@ -816,105 +599,59 @@ def get_objectives(
     connection = get_connection()
 
     try:
-
         if status is None:
-
             rows = connection.execute(
                 """
                 SELECT
-                    id,
-                    guild_id,
-                    objective,
-                    description,
-                    priority,
-                    status,
-                    created_at,
-                    updated_at
+                    id, guild_id, objective, description,
+                    priority, status, created_at, updated_at
                 FROM server_objectives
                 WHERE guild_id = ?
                 ORDER BY created_at DESC
                 LIMIT ?
                 """,
-                (
-                    guild_id,
-                    limit,
-                ),
+                (guild_id, limit),
             ).fetchall()
-
         else:
-
             rows = connection.execute(
                 """
                 SELECT
-                    id,
-                    guild_id,
-                    objective,
-                    description,
-                    priority,
-                    status,
-                    created_at,
-                    updated_at
+                    id, guild_id, objective, description,
+                    priority, status, created_at, updated_at
                 FROM server_objectives
                 WHERE guild_id = ?
                 AND status = ?
                 ORDER BY created_at DESC
                 LIMIT ?
                 """,
-                (
-                    guild_id,
-                    status,
-                    limit,
-                ),
+                (guild_id, status, limit),
             ).fetchall()
 
-        return [
-            dict(row)
-            for row in rows
-        ]
+        return [dict(row) for row in rows]
 
     finally:
-
         connection.close()
 
 
-def get_objective(
-    objective_id: int,
-    guild_id: int,
-):
+def get_objective(objective_id: int, guild_id: int):
     connection = get_connection()
 
     try:
-
         row = connection.execute(
             """
             SELECT
-                id,
-                guild_id,
-                objective,
-                description,
-                priority,
-                status,
-                created_at,
-                updated_at
+                id, guild_id, objective, description,
+                priority, status, created_at, updated_at
             FROM server_objectives
             WHERE id = ?
             AND guild_id = ?
             """,
-            (
-                objective_id,
-                guild_id,
-            ),
+            (objective_id, guild_id),
         ).fetchone()
 
-        if row is None:
-            return None
-
-        return dict(
-            row
-        )
+        return dict(row) if row is not None else None
 
     finally:
-
         connection.close()
 
 
@@ -928,57 +665,37 @@ def update_objective(
     connection = get_connection()
 
     try:
-
         existing = connection.execute(
             """
-            SELECT
-                id,
-                status,
-                priority,
-                description
+            SELECT id, status, priority, description
             FROM server_objectives
             WHERE id = ?
             AND guild_id = ?
             """,
-            (
-                objective_id,
-                guild_id,
-            ),
+            (objective_id, guild_id),
         ).fetchone()
 
         if existing is None:
             return False
 
         new_status = (
-            status
-            if status is not None
-            else existing["status"]
+            status if status is not None else existing["status"]
         )
-
         new_priority = (
-            priority
-            if priority is not None
-            else existing["priority"]
+            priority if priority is not None else existing["priority"]
         )
-
         new_description = (
             description
             if description is not None
             else existing["description"]
         )
 
-        updated_at = datetime.now(
-            timezone.utc
-        ).isoformat()
+        updated_at = datetime.now(timezone.utc).isoformat()
 
         connection.execute(
             """
             UPDATE server_objectives
-            SET
-                status = ?,
-                priority = ?,
-                description = ?,
-                updated_at = ?
+            SET status = ?, priority = ?, description = ?, updated_at = ?
             WHERE id = ?
             AND guild_id = ?
             """,
@@ -993,40 +710,29 @@ def update_objective(
         )
 
         connection.commit()
-
         return True
 
     finally:
-
         connection.close()
 
 
-def delete_objective(
-    objective_id: int,
-    guild_id: int,
-):
+def delete_objective(objective_id: int, guild_id: int):
     connection = get_connection()
 
     try:
-
         cursor = connection.execute(
             """
             DELETE FROM server_objectives
             WHERE id = ?
             AND guild_id = ?
             """,
-            (
-                objective_id,
-                guild_id,
-            ),
+            (objective_id, guild_id),
         )
 
         connection.commit()
-
         return cursor.rowcount > 0
 
     finally:
-
         connection.close()
 
 
@@ -1040,20 +746,13 @@ def save_objective_assessment(
     connection = get_connection()
 
     try:
-
-        now = datetime.now(
-            timezone.utc
-        ).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         cursor = connection.execute(
             """
             INSERT INTO objective_assessments (
-                objective_id,
-                guild_id,
-                status,
-                assessment,
-                evidence,
-                created_at
+                objective_id, guild_id, status,
+                assessment, evidence, created_at
             )
             VALUES (?, ?, ?, ?, ?, ?)
             """,
@@ -1068,11 +767,9 @@ def save_objective_assessment(
         )
 
         connection.commit()
-
         return cursor.lastrowid
 
     finally:
-
         connection.close()
 
 
@@ -1084,37 +781,23 @@ def get_objective_assessments(
     connection = get_connection()
 
     try:
-
         rows = connection.execute(
             """
             SELECT
-                id,
-                objective_id,
-                guild_id,
-                status,
-                assessment,
-                evidence,
-                created_at
+                id, objective_id, guild_id, status,
+                assessment, evidence, created_at
             FROM objective_assessments
             WHERE objective_id = ?
             AND guild_id = ?
             ORDER BY created_at DESC
             LIMIT ?
             """,
-            (
-                objective_id,
-                guild_id,
-                limit,
-            ),
+            (objective_id, guild_id, limit),
         ).fetchall()
 
-        return [
-            dict(row)
-            for row in rows
-        ]
+        return [dict(row) for row in rows]
 
     finally:
-
         connection.close()
 
 
@@ -1125,36 +808,21 @@ def get_latest_objective_assessment(
     connection = get_connection()
 
     try:
-
         row = connection.execute(
             """
             SELECT
-                id,
-                objective_id,
-                guild_id,
-                status,
-                assessment,
-                evidence,
-                created_at
+                id, objective_id, guild_id, status,
+                assessment, evidence, created_at
             FROM objective_assessments
             WHERE objective_id = ?
             AND guild_id = ?
             ORDER BY created_at DESC
             LIMIT 1
             """,
-            (
-                objective_id,
-                guild_id,
-            ),
+            (objective_id, guild_id),
         ).fetchone()
 
-        if row is None:
-            return None
-
-        return dict(
-            row
-        )
+        return dict(row) if row is not None else None
 
     finally:
-
         connection.close()
