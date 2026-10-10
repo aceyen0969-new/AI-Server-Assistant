@@ -15,6 +15,7 @@ from commands import approvaltest
 from commands import cleanup
 from commands import analytics
 from commands import objective
+from commands import analytics_access
 
 from onboarding import register_onboarding
 
@@ -67,7 +68,7 @@ async def load_features():
     await cleanup.setup(bot)
     await analytics.setup(bot)
     await objective.setup(bot)
-
+    await analytics_access.setup(bot)
 
 @bot.event
 async def on_ready():
