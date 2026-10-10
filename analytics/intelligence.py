@@ -294,12 +294,20 @@ def detect_structure_issues(snapshot):
 
 
 def analyze_server_structure(guild):
-    """
-    Build a server snapshot and return its findings.
-
-    No AI calls, database writes, or Discord modifications occur here.
-    """
     snapshot = build_server_snapshot(guild)
+
+    print(
+        "ANALYTICS SNAPSHOT DEBUG: "
+        f"guild={snapshot['guild_name']!r}, "
+        f"guild_id={snapshot['guild_id']}, "
+        f"total_cached_channels={len(_get_channels(guild))}, "
+        f"regular_channels={snapshot['channel_count']}, "
+        f"categories={snapshot['category_count']}, "
+        f"snapshot_channel_entries={len(snapshot['channels'])}, "
+        f"snapshot_category_entries={len(snapshot['categories'])}",
+        flush=True,
+    )
+
     findings = detect_structure_issues(snapshot)
 
     severity_order = {
