@@ -33,6 +33,7 @@ def initialize_onboarding_database():
 def get_server_config(guild_id):
     with sqlite3.connect(DATABASE_PATH) as connection:
         connection.row_factory = sqlite3.Row
+
         row = connection.execute(
             """
             SELECT *
@@ -112,9 +113,32 @@ async def get_or_create_channel(
     channel = find_channel_by_id(guild, channel_id)
 
     if channel is not None:
+        if (
+            channel_name == ANALYTICS_CHANNEL_NAME
+            and channel.name == ANALYTICS_CHANNEL_NAME
+        ):
+            preferred_channel = find_channel_by_name(
+                guild,
+                "quasar-reports",
+            )
+
+            if preferred_channel is not None:
+                print(
+                    "ONBOARDING: Migrating analytics channel "
+                    f"from #{channel.name} to "
+                    f"#{preferred_channel.name} in {guild.name} "
+                    f"(old_id={channel.id}, "
+                    f"new_id={preferred_channel.id})",
+                    flush=True,
+                )
+
+                return preferred_channel, False
+
         return channel, False
 
-    for name in dict.fromkeys((channel_name, *alternate_names)):
+    for name in dict.fromkeys(
+        (channel_name, *alternate_names)
+    ):
         channel = find_channel_by_name(guild, name)
 
         if channel is not None:
@@ -124,6 +148,7 @@ async def get_or_create_channel(
                 f"(guild_id={guild.id}, channel_id={channel.id})",
                 flush=True,
             )
+
             return channel, False
 
     bot_member = guild.me
@@ -180,7 +205,10 @@ async def send_setup_messages(
     assistant_created,
     analytics_created,
 ):
-    if assistant_created and not config["assistant_welcome_sent"]:
+    if (
+        assistant_created
+        and not config["assistant_welcome_sent"]
+    ):
         try:
             await assistant_channel.send(
                 f"Hello, {guild.name}! I'm Quasar. 🚀\n\n"
@@ -202,7 +230,10 @@ async def send_setup_messages(
                 flush=True,
             )
 
-    if analytics_created and not config["analytics_welcome_sent"]:
+    if (
+        analytics_created
+        and not config["analytics_welcome_sent"]
+    ):
         try:
             await analytics_channel.send(
                 "📊 **Quasar Analytics is ready!**\n\n"
@@ -261,10 +292,14 @@ async def ensure_server_setup(guild):
         updates = {}
 
         if assistant_channel is not None:
-            updates["assistant_channel_id"] = assistant_channel.id
+            updates["assistant_channel_id"] = (
+                assistant_channel.id
+            )
 
         if analytics_channel is not None:
-            updates["analytics_channel_id"] = analytics_channel.id
+            updates["analytics_channel_id"] = (
+                analytics_channel.id
+            )
 
         setup_completed = (
             assistant_channel is not None
@@ -275,7 +310,10 @@ async def ensure_server_setup(guild):
 
         save_server_config(guild.id, **updates)
 
-        if assistant_channel is not None and analytics_channel is not None:
+        if (
+            assistant_channel is not None
+            and analytics_channel is not None
+        ):
             refreshed_config = get_server_config(guild.id)
 
             await send_setup_messages(
