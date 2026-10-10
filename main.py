@@ -16,6 +16,8 @@ from commands import cleanup
 from commands import analytics
 from commands import objective
 
+from onboarding import register_onboarding
+
 from moderation.moderator import moderation_manager
 
 from ai import assistant
@@ -94,12 +96,12 @@ async def on_ready():
 
     if scheduler_task is None or scheduler_task.done():
         print("ANALYTICS SCHEDULER: Starting...")
+
         scheduler_task = asyncio.create_task(
             analytics_scheduler(bot)
         )
 
 
-@bot.event
 async def on_message(message):
     if message.guild is None:
         await bot.process_commands(message)
@@ -111,6 +113,7 @@ async def on_message(message):
 
     try:
         await observer.handle_message(message)
+
         print(
             "ANALYTICS MESSAGE RECORDED: "
             f"guild={message.guild.id}, "
@@ -118,21 +121,28 @@ async def on_message(message):
             f"user={message.author.id}",
             flush=True,
         )
+
     except Exception as error:
         print("ANALYTICS OBSERVER ERROR:")
         print(repr(error))
 
     try:
         await moderation_manager.handle_message(message)
+
     except Exception as error:
         print("MODERATION HANDLER ERROR:")
         print(repr(error))
 
     if message.content.strip():
         try:
-            language_result = detect_message(message.content)
+            language_result = detect_message(
+                message.content
+            )
 
-            print("LANGUAGE DETECTOR:", language_result)
+            print(
+                "LANGUAGE DETECTOR:",
+                language_result,
+            )
 
             unknown_words = language_result.get(
                 "unknown_words",
@@ -144,13 +154,19 @@ async def on_message(message):
                     language_result
                 )
 
-                print("LANGUAGE LEARNING:", learning_results)
+                print(
+                    "LANGUAGE LEARNING:",
+                    learning_results,
+                )
 
             conflict_result = detect_conflict_signals(
                 message.content
             )
 
-            print("CONFLICT SIGNALS:", conflict_result)
+            print(
+                "CONFLICT SIGNALS:",
+                conflict_result,
+            )
 
         except Exception as error:
             print("MESSAGE ANALYSIS ERROR:")
@@ -158,9 +174,11 @@ async def on_message(message):
 
     try:
         await assistant.handle_message(message)
+
     except Exception as error:
         print("ASSISTANT HANDLER ERROR:")
         print(repr(error))
+
     finally:
         await bot.process_commands(message)
 
@@ -168,11 +186,19 @@ async def on_message(message):
 async def main():
     initialize_database()
 
+    register_onboarding(bot)
+
+    bot.add_listener(
+        on_message,
+        "on_message",
+    )
+
     async with bot:
         await load_features()
 
         try:
             await bot.start(DISCORD_TOKEN)
+
         finally:
             if scheduler_task is not None:
                 scheduler_task.cancel()
